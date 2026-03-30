@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grid Snap Drawing</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            background-color: white;
+            cursor: crosshair;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 8px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            font-family: system-ui, sans-serif;
+            font-size: 14px;
+        }
+        #controls input {
+            width: 48px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label>
+            Grid size:
+            <input id="gridSize" type="number" value="20" min="6" max="80" step="2" />
+        </label>
+        <button id="clearBtn">Clear</button>
+        <button id="eraseBtn">Erase</button>
+    </div>
+
+    <canvas id="gridCanvas" width="600" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        const gridSizeInput = document.getElementById('gridSize');
+        const clearBtn = document.getElementById('clearBtn');
+        const eraseBtn = document.getElementById('eraseBtn');
+
+        let gridSize = Number(gridSizeInput.value);
+        let isDrawing = false;
+        let start = null; // { x, y }
+        let previewEnd = null;
+        let isErasing = false;
+
+        const lines = [];
+
+        function snap(value) {
+            return Math.round(value / gridSize) * gridSize;
+        }
+
+        function clampToCanvas(pt) {
+            return {
+                x: Math.max(0, Math.min(canvas.width, pt.x)),
+                y: Math.max(0, Math.min(canvas.height, pt.y))
+            };
+        }
+
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+
+            for (let x = 0; x <= canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            for (let y = 0; y <= canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawLines() {
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = isErasing ? '#f0f0f0' : 'black';
+            ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+
+            for (const line of lines) {
+                ctx.beginPath();
+                ctx.moveTo(line.x1, line.y1);
+                ctx.lineTo(line.x2, line.y2);
+                ctx.stroke();
+            }
+
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        function render() {
+            drawGrid();
+            drawLines();
+
+            if (isDrawing && start && previewEnd) {
+                ctx.strokeStyle = '#0077cc';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(previewEnd.x, previewEnd.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        function getMousePos(evt) {
+            const rect = canvas.getBoundingClientRect();
+            const x = evt.clientX - rect.left;
+            const y = evt.clientY - rect.top;
+            return clampToCanvas({ x, y });
+        }
+
+        function updateGridSize() {
+            gridSize = Number(gridSizeInput.value) || 20;
+            render();
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            isErasing = false;
+            const pos = getMousePos(e);
+            start = {
+                x: snap(pos.x),
+                y: snap(pos.y)
+            };
+            previewEnd = { ...start };
+            render();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const pos = getMousePos(e);
+            previewEnd = {
+                x: snap(pos.x),
+                y: snap(pos.y)
+            };
+            render();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            if (start && previewEnd) {
+                lines.push({ x1: start.x, y1: start.y, x2: previewEnd.x, y2: previewEnd.y });
+            }
+            start = null;
+            previewEnd = null;
+            render();
+        });
+
+        canvas.addEventListener('mouseout', () => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            start = null;
+            previewEnd = null;
+            render();
+        });
+
+        clearBtn.addEventListener('click', () => {
+            lines.length = 0;
+            render();
+        });
+
+        eraseBtn.addEventListener('click', () => {
+            isErasing = !isErasing;
+            eraseBtn.textContent = isErasing ? 'Drawing' : 'Erase';
+            render();
+        });
+
+        gridSizeInput.addEventListener('change', updateGridSize);
+        gridSizeInput.addEventListener('input', updateGridSize);
+
+        render();
+    </script>
+</body>
+<button onclick="window.location.href='index.html'">Home</button>
+</html>
