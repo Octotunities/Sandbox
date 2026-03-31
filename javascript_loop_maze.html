@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Space Maze</title>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; background: #1a1a1a; margin: 0; }
+        canvas { border: 4px solid #333; background: #000; }
+    </style>
+</head>
+<body>
+
+    <canvas id="mazeCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 1 = Wall (The Lines), 0 = Path (The Space)
+        const grid = [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1,1],
+            [1, 0, 0, 0, 1, 0, 0, 0, 0, 1,0],
+            [1, 0, 1, 0, 1, 0, 1, 1, 0, 1,0],
+            [1, 0, 1, 0, 0, 0, 1, 0, 0, 1.0 ],
+            [1, 0, 1, 1, 1, 1, 1, 0, 1, 1,0],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0,0],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1,1]
+        ];
+
+        const cellSize = 20;
+        canvas.width = grid[0].length * cellSize;
+        canvas.height = grid.length * cellSize;
+
+        function drawMaze() {
+            for (let y = 0; y < grid.length; y++) {
+                for (let x = 0; x < grid[y].length; x++) {
+                    
+                    // If the cell is a 1, draw a solid wall block
+                    if (grid[y][x] === 1) {
+                        ctx.fillStyle = "#505050"; // Wall color
+                        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+                        // Draw connecting lines between adjacent wall blocks
+                        ctx.strokeStyle = "#999";
+                        ctx.lineWidth = 1;
+
+                        // Check Right: if neighbor is also a wall, draw a highlight line
+                        if (x + 1 < grid[y].length && grid[y][x + 1] === 1) {
+                            ctx.beginPath();
+                            ctx.moveTo(x * cellSize + cellSize, y * cellSize);
+                            ctx.lineTo(x * cellSize + cellSize, y * cellSize + cellSize);
+                            ctx.stroke();
+                        }
+
+                        // Check Down: if neighbor is also a wall, draw a highlight line
+                        if (y + 1 < grid.length && grid[y + 1][x] === 1) {
+                            ctx.beginPath();
+                            ctx.moveTo(x * cellSize, y * cellSize + cellSize);
+                            ctx.lineTo(x * cellSize + cellSize, y * cellSize + cellSize);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            }
+        }
+
+        drawMaze();
+    </script>
+</body>
+<button onclick="window.location.href='index.html'">Home</button>
+</html>
