@@ -18,9 +18,23 @@
             background-color: white;
             cursor: crosshair;
         }
+        .button-column {
+            position: absolute;
+            top: 350px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .button-column button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
+
     <canvas id="gridCanvas" width="500" height="500"></canvas>
 
     <script>
@@ -30,6 +44,10 @@
         let isDrawing = false;
         let lastX = 0;
         let lastY = 0;
+        let currentBrushColor = 'black'; // Default brush color
+       function changeBrushColor(newColor) {
+      currentBrushColor = newColor;
+  }
 
         // Draw the grid
         function drawGrid() {
@@ -62,7 +80,7 @@
         // Draw line
         canvas.addEventListener('mousemove', (e) => {
             if (!isDrawing) return;
-            ctx.strokeStyle = 'black';
+           ctx.strokeStyle = currentBrushColor;
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
@@ -84,5 +102,11 @@
         drawGrid();
     </script>
 </body>
-<button onclick="window.location.href='index.html'">Home</button>
+<div class="button-column">
+ <button onclick="window.location.href='index.html'">Home</button>
+ <button onclick="changeBrushColor('black')">Black</button>
+  <button onclick="changeBrushColor('red')">Red</button>
+  <button onclick="changeBrushColor('blue')">Blue</button>
+  <button onclick="changeBrushColor('green')">Green</button>
+</div>
 </html>
