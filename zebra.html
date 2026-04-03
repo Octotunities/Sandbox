@@ -1,23 +1,40 @@
-doctype html>
-<html lang="en">    
+<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zebra Function</title>
-
-function zebra(x, y) {
-    // Perform an operation with x and y
-    const output = x + y;
-    
-    // Give back the output
-    return output;
-}
-const result = zebra(10, 5);
-console.log(result); // This will output 15
-
+<style>
+  body { 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    height: 100vh; 
+    background-color: #f9f9f9; 
+  }
+  svg { 
+    width: 300px; 
+    height: 300px; 
+    stroke: black; 
+    stroke-width: 2.5; 
+    fill: none; 
+  }
+</style>
 </head>
 <body>
-    <h1>Zebra Function Example</h1>
-    <p>Check the console for the output of the zebra function.</p>
+
+  <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- Body and Neck Outline -->
+    <path d="M40,140 Q40,100 60,80 T100,60 Q140,60 160,80 T180,140" stroke-linecap="round" />
+    <path d="M60,80 Q55,40 40,30 Q30,25 20,40 Q25,55 45,65" stroke-linecap="round" />
+    
+    <!-- Legs -->
+    <path d="M50,140 L50,185 M75,140 L75,185 M150,140 L150,185 M175,140 L175,185" stroke-linecap="round" />
+    
+    <!-- Stripe Details (Lines) -->
+    <line x1="75" y1="75" x2="85" y2="105" />
+    <line x1="95" y1="65" x2="105" y2="100" />
+    <line x1="120" y1="62" x2="125" y2="100" />
+    <line x1="145" y1="70" x2="145" y2="105" />
+    <line x1="165" y1="85" x2="160" y2="115" />
+  </svg>
+
 </body>
-</html> 
+</html>
