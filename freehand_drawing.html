@@ -48,8 +48,15 @@
         let lastX = 0;
         let lastY = 0;
         let currentBrushColor = 'black'; // Default brush color
+        let brushType = 'pen'; // New variable to track brush type
+
        function changeBrushColor(newColor) {
       currentBrushColor = newColor;
+       }
+
+          // Function to switch between pen and spray
+    function setBrushType(type) {
+        brushType = type;
   }
 
         // Draw the grid
@@ -87,11 +94,26 @@
         canvas.addEventListener('mousemove', (e) => {
             if (!isDrawing) return;
            ctx.strokeStyle = currentBrushColor;
+            ctx.fillStyle = currentBrushColor; // Needed for spray droplets 
+           if (brushType === 'pen') {
+            // ORIGINAL PEN LOGIC  
             ctx.lineWidth = 2;
+              ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
             ctx.lineTo(e.offsetX, e.offsetY);
             ctx.stroke();
+                } else if (brushType === 'spray') {
+            // NEW SPRAY LOGIC
+            const density = 40;
+            const spread = 15;
+            for (let i = 0; i < density; i++) {
+                const offsetX = (Math.random() - 0.5) * 2 * spread;
+                const offsetY = (Math.random() - 0.5) * 2 * spread;
+                ctx.fillRect(e.offsetX + offsetX, e.offsetY + offsetY, 1, 1);
+            } 
+        }
             [lastX, lastY] = [e.offsetX, e.offsetY];
         });
 
@@ -133,6 +155,11 @@
   <button onclick="changeBrushColor('blue')">Blue</button>
   <button onclick="changeBrushColor('green')">Green</button>
     <hr style="width: 100%; border: 0; border-top: 1px solid #ccc;"> <!-- Optional divider line -->
-  <button onclick="downloadCanvas()">Download Drawing</button>
+  <span style="font-family: sans-serif; font-weight: bold; margin-top: 10px;">Select Tool:</span>
+<button onclick="setBrushType('pen')">Pen</button>
+<button onclick="setBrushType('spray')">Spray Paint</button>
+   
+      <hr style="width: 100%; border: 0; border-top: 1px solid #ccc;"> <!-- Optional divider line -->
+   <button onclick="downloadCanvas()">Download Drawing</button>
 </div>
 </html>
