@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draw Lines on Grid</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            background-color: white;
+            cursor: crosshair;
+        }
+        .button-column {
+            position: absolute;
+            top: 350px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .button-column button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    
+
+    <canvas id="gridCanvas" width="500" height="500"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        const gridSize = 20; // Size of each grid cell
+        
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let currentBrushColor = 'black'; // Default brush color
+        let brushType = 'pen'; // New variable to track brush type
+
+       function changeBrushColor(newColor) {
+      currentBrushColor = newColor;
+       }
+
+          // Function to switch between pen and spray
+    function setBrushType(type) {
+        brushType = type;
+  }
+
+        // Draw the grid
+        function drawGrid() {
+             // 1. Fill the entire canvas with white
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+
+            // Vertical lines
+            for (let x = 0; x <= canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            // Horizontal lines
+            for (let y = 0; y <= canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        // Start drawing
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        });
+
+        // Draw line
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+           ctx.strokeStyle = currentBrushColor;
+            ctx.fillStyle = currentBrushColor; // Needed for spray droplets 
+           if (brushType === 'pen') {
+            // ORIGINAL PEN LOGIC  
+            ctx.lineWidth = 2;
+              ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.stroke();
+                } else if (brushType === 'spray') {
+            // NEW SPRAY LOGIC
+            const density = 40;
+            const spread = 15;
+            for (let i = 0; i < density; i++) {
+                const offsetX = (Math.random() - 0.5) * 2 * spread;
+                const offsetY = (Math.random() - 0.5) * 2 * spread;
+                ctx.fillRect(e.offsetX + offsetX, e.offsetY + offsetY, 1, 1);
+            } 
+        }
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        });
+
+        // Stop drawing
+        canvas.addEventListener('mouseup', () => {
+            isDrawing = false;
+        });
+
+        canvas.addEventListener('mouseout', () => {
+            isDrawing = false;
+        });
+
+        // Initialize grid
+        drawGrid();
+        // Download canvas as image
+        function downloadCanvas() {
+            const canvas = document.getElementById("gridCanvas");
+    
+    // 1. Convert canvas to a data URL (PNG format)
+    const imageURL = canvas.toDataURL("image/png");
+    
+    // 2. Create a temporary anchor element
+    const link = document.createElement("a");
+    link.href = imageURL;
+    link.download = "my-drawing.png"; // Name of the downloaded file
+    
+    // 3. Trigger the download
+    link.click();
+  }
+        
+    </script>
+</body>
+<div class="button-column">
+ <span style="font-family: sans-serif; font-weight: bold; font-size: 24px; margin-top: -165px;">Freehand Drawing</span>
+ <button onclick="window.location.href='index.html'">Home</button>
+ <span style="font-family: sans-serif; font-weight: bold; margin-top: 10px;">Select Color:</span>
+ <button onclick="changeBrushColor('black')">Black</button>
+  <button onclick="changeBrushColor('red')">Red</button>
+  <button onclick="changeBrushColor('blue')">Blue</button>
+  <button onclick="changeBrushColor('green')">Green</button>
+    <hr style="width: 100%; border: 0; border-top: 1px solid #ccc;"> <!-- Optional divider line -->
+  <span style="font-family: sans-serif; font-weight: bold; margin-top: 10px;">Select Tool:</span>
+<button onclick="setBrushType('pen')">Pen</button>
+<button onclick="setBrushType('spray')">Spray Paint</button>
+   
+      <hr style="width: 100%; border: 0; border-top: 1px solid #ccc;"> <!-- Optional divider line -->
+   <button onclick="downloadCanvas()">Download Drawing</button>
+</div>
+</html>
