@@ -21,23 +21,24 @@
         }
         .button-column {
             position: absolute;
-            top: 350px;
+            top: 300px;
             left: 20px;
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
         .button-column button {
-            padding: 10px 20px;
+            padding: 5px 20px;
             font-size: 16px;
             cursor: pointer;
+            width: 130px; /* This will force all buttons to be 150 pixels wide */
         }
     </style>
 </head>
 <body>
     
 
-    <canvas id="gridCanvas" width="500" height="500"></canvas>
+    <canvas id="gridCanvas" width="1000" height="1000"></canvas>
 
     <script>
         const canvas = document.getElementById('gridCanvas');
@@ -147,19 +148,21 @@
     </script>
 </body>
 <div class="button-column">
- <span style="font-family: sans-serif; font-weight: bold; font-size: 24px; margin-top: -165px;">Freehand Drawing</span>
+ <span style="font-family: sans-serif; font-weight: bold; font-size: 24px; margin-top: -165px;">Freehand <br>Drawing</span>
  <button onclick="window.location.href='index.html'">Home</button>
  <span style="font-family: sans-serif; font-weight: bold; margin-top: 10px;">Select Color:</span>
- <button onclick="changeBrushColor('black')">Black</button>
-  <button onclick="changeBrushColor('red')">Red</button>
-  <button onclick="changeBrushColor('blue')">Blue</button>
-  <button onclick="changeBrushColor('green')">Green</button>
+ <button onclick="changeBrushColor('black')"style="color:black">Black</button>
+  <button onclick="changeBrushColor('red')"style="color:red">Red</button>
+  <button onclick="changeBrushColor('blue')"style="color:blue">Blue</button>
+  <button onclick="changeBrushColor('green')"style="color:green">Green</button>
+  <button onclick="changeBrushColor('yellow')"style="color:gold">Yellow</button>
+  <button onclick="changeBrushColor('white')"style="color:gray">White</button>
     <hr style="width: 100%; border: 0; border-top: 1px solid #ccc;"> <!-- Optional divider line -->
   <span style="font-family: sans-serif; font-weight: bold; margin-top: 10px;">Select Tool:</span>
 <button onclick="setBrushType('pen')">Pen</button>
 <button onclick="setBrushType('spray')">Spray Paint</button>
    
       <hr style="width: 100%; border: 0; border-top: 1px solid #ccc;"> <!-- Optional divider line -->
-   <button onclick="downloadCanvas()">Download Drawing</button>
+   <button onclick="downloadCanvas()">Save</button>
 </div>
 </html>
