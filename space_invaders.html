@@ -93,8 +93,14 @@
                 <div class="stat"><span>Lives:</span><span id="livesDisplay">3</span></div>
                 <div class="stat"><span>Wave:</span><span id="waveDisplay">1</span></div>
             </div>
-        </div>
-    </div>
+        <!-- ADD THIS ENTIRE HIGH SCORES BOX HERE -->
+            <div class="hud-section" style="margin-top: 15px;">
+                <p style="font-weight: bold; margin-bottom: 10px; text-align: center; color: #0f0;">🏆 TOP SCORES</p>
+                <div id="highScoresList" style="font-size: 14px; line-height: 1.6;">
+                    <!-- JavaScript will automatically inject the scores here -->
+                </div>
+            </div>
+        </div> 
     <div class="game-over-overlay" id="gameOverOverlay">
         <div class="game-over-content">
             <h2>GAME OVER</h2>
@@ -126,8 +132,8 @@
             enemySpeed: 1,
             lastShotTime: 0,
             shootCooldown: 400,
-            enemyImage: null,
-            isPaused: false // ADDED: Tracks if the game is currently paused
+            isPaused: false, // ADDED: Tracks if the game is currently paused
+            enemyImages: []// CHANGED: Changed to a list array to hold multiple alien files
         };
 
            
@@ -157,11 +163,38 @@
             pImg.src = 'images/player-ship.png';
             pImg.onload = () => { gameState.player.image = pImg; };
 
-            const eImg = new Image();
-            eImg.src = 'images/enemy-ship.png';
-            eImg.onload = () => { gameState.enemyImage = eImg; };
+            // 2. REPLACE the old enemy lines with this smart multi-wave folder loader loop:
+            for (let i = 1; i <= 3; i++) {
+                const eImg = new Image();
+                eImg.src = 'images/enemy-' + i + '.png';
+                
+                eImg.onload = () => { 
+                    gameState.enemyImages[i] = eImg; 
+                };
+            }
+        }
+// PASTE YOUR TWO NEW HIGH SCORE FUNCTIONS RIGHT HERE:
+        function updateHighScoreDisplay() {
+            const scores = JSON.parse(localStorage.getItem('space_invaders_scores')) || [0, 0, 0];
+            const listContainer = document.getElementById('highScoresList');
+            listContainer.innerHTML = '';
+            scores.forEach((score, index) => {
+                listContainer.innerHTML += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>${index + 1}.</span>
+                        <span style="color: #ff0; font-weight: bold;">${score}</span>
+                    </div>`;
+            });
         }
 
+        function saveHighScore(finalScore) {
+            let scores = JSON.parse(localStorage.getItem('space_invaders_scores')) || [0, 0, 0];
+            scores.push(finalScore);
+            scores.sort((a, b) => b - a);
+            scores = scores.slice(0, 3);
+            localStorage.setItem('space_invaders_scores', JSON.stringify(scores));
+            updateHighScoreDisplay();
+        }
         function initEnemies() {
             const rows = 4;
             const cols = 8;
@@ -292,11 +325,15 @@
                 ctx.fill();
             }
 
-            // Draw Alien Invader PNG or Fallback Blocks
+              // Draw Alien Invaders (Checks your active wave number for the correct graphic)
             gameState.enemies.forEach(e => {
-                if (gameState.enemyImage) {
-                    ctx.drawImage(gameState.enemyImage, e.x, e.y, e.width, e.height);
+                // Look up the specific image slot that matches the current wave number
+                const currentAlienSprite = gameState.enemyImages[gameState.wave];
+
+                if (currentAlienSprite) {
+                    ctx.drawImage(currentAlienSprite, e.x, e.y, e.width, e.height);
                 } else {
+                    // Automatic Fallback: Use the original classic block if file load fails
                     ctx.fillStyle = '#f0f';
                     ctx.fillRect(e.x, e.y, e.width, e.height);
                     ctx.fillStyle = '#000';
@@ -306,7 +343,7 @@
             });
 
                  // Draw Player Bullets as Round Circles
-            ctx.fillStyle = '#ffff00';
+            ctx.fillStyle = '#ffffff';
             gameState.playerBullets.forEach(b => {
                 ctx.beginPath();
                 // Draws a circle at the bullet center with a 3-pixel radius
@@ -315,7 +352,7 @@
             });
 
              // Draw Enemy Bullets as Round Circles
-            ctx.fillStyle = '#ff3333';
+            ctx.fillStyle = '#ffffff';
             gameState.enemyBullets.forEach(b => {
                 ctx.beginPath();
                 ctx.arc(b.x + b.width / 2, b.y + b.height / 2, 3, 0, Math.PI * 2);
@@ -351,9 +388,12 @@
 
         function endGame() {
             gameState.gameRunning = false;
+                   // ADD THIS LINE HERE: Fires your score into the permanent memory array
+            saveHighScore(gameState.score);
+            
             document.getElementById('finalScore').innerText = "Final Score: " + gameState.score;
             document.getElementById('gameOverOverlay').style.display = 'flex';
-        }
+        } 
 
         function restartGame() {
             gameState.score = 0;
@@ -369,7 +409,8 @@
             initEnemies();
             gameState.gameRunning = true;
         }
-
+      // Make sure this activation line is here so the zeros load instantly!
+        updateHighScoreDisplay(); 
     // Call the loader here so the game searches your folder immediately
         loadImages(); 
         initEnemies();
