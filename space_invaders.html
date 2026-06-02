@@ -31,7 +31,7 @@
         }
 
         canvas {
-            border: 3px solid #0f0;
+            border: 3px solid rgb(176, 251, 176);
             background: #001a00;
         }
         .sidebar {
@@ -41,7 +41,7 @@
             min-width: 200px;
         }
         .hud-section {
-            border: 2px solid #0f0;
+            border: 2px solid rgb(176, 238, 176);
             padding: 15px;
             background: rgba(0, 30, 0, 0.8);
         }
@@ -65,7 +65,7 @@
         }
         .game-over-content {
             text-align: center;
-            border: 3px solid #0f0;
+            border: 3px solid rgb(92, 255, 92);
             padding: 40px;
             background: #001a00;
         }
@@ -85,7 +85,7 @@
     <div class="game-container">
         <div>
             <canvas id="gameCanvas" width="800" height="600"></canvas>
-            <p style="text-align: center; margin-top: 10px;">Arrows = Move | SPACE = Fire</p>
+            <p style="text-align: center; margin-top: 10px;">Arrows = Move | SPACE = Fire | CTRL = Pause</p>
         </div>
         <div class="sidebar">
             <div class="hud-section">
@@ -105,11 +105,11 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const PLAYER_SIZE = 30;
-        const ENEMY_SIZE = 25;
+        const PLAYER_SIZE = 50;
+        const ENEMY_SIZE = 50;
         const BULLET_W = 4;
         const BULLET_H = 12;
-        const P_SPEED = 6;
+        const P_SPEED = 10; 
         const PB_SPEED = 8;
         const EB_SPEED = 2;
 
@@ -126,14 +126,24 @@
             enemySpeed: 1,
             lastShotTime: 0,
             shootCooldown: 400,
-           
+            enemyImage: null,
+            isPaused: false // ADDED: Tracks if the game is currently paused
         };
+
+           
+        
         const keys = { ArrowLeft: false, ArrowRight: false, ' ': false };
 
         window.addEventListener('keydown', (e) => {
             if (e.key in keys) {
                 keys[e.key] = true;
                 e.preventDefault();
+            }
+            // ADDED: Pressing P or p toggles the pause flag instantly
+            if (e.key === 'Control' || e.key === 'Control') {
+                if (gameState.gameRunning) {
+                    gameState.isPaused = !gameState.isPaused;
+                }
             }
         });
 
@@ -179,6 +189,8 @@
         }
         function update() {
             if (!gameState.gameRunning) return;
+            if (gameState.isPaused) return; // ADDED: Freezes all movements and timers when paused
+
 
             if (keys.ArrowLeft) gameState.player.x -= P_SPEED;
             if (keys.ArrowRight) gameState.player.x += P_SPEED;
@@ -308,9 +320,23 @@
                 ctx.beginPath();
                 ctx.arc(b.x + b.width / 2, b.y + b.height / 2, 3, 0, Math.PI * 2);
                 ctx.fill();
-            });
-        }
 
+           
+            });
+                 // ADDED: Renders a large neon "PAUSED" message directly over the gameplay canvas area
+            if (gameState.isPaused) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'; // Translucent dark overlay shade
+                ctx.fillRect(0, 0, 800, 600);
+                
+                ctx.fillStyle = '#00ff00';
+                ctx.font = 'bold 40px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME PAUSED', 400, 300);
+                
+                ctx.font = '20px sans-serif';
+                ctx.fillText('Press "Ctrl" to Resume', 400, 350);
+        }
+    }
     
 
         function gameLoop() {
