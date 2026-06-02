@@ -1,0 +1,95 @@
+Space Invaders Game
+A fully functional Space Invaders game built with HTML5 Canvas and vanilla JavaScript.
+
+Features
+✅ Core Gameplay
+
+Arrow keys to move the player ship left/right
+Space bar to fire bullets
+Continuous gameplay with progressive difficulty
+3 lives system - game ends when lives reach 0
+✅ Scoring & Progression
+
++100 points for each enemy destroyed
+Waves increase every 500 points
+Enemy spawn rate and speed increase with each wave
+Top 3 high scores saved in browser localStorage
+✅ Visual Polish
+
+Retro green terminal aesthetic
+Real-time HUD showing score, lives, and wave
+Game Over screen with final score and ranking
+Geometric shape placeholders (triangle for player, rectangles for enemies)
+✅ Custom Graphics Support
+
+Drop PNG files in the images/ folder
+player-ship.png - replaces player ship geometry
+enemy-ship.png - replaces enemy ship geometry
+Falls back to geometric shapes if images not found
+How to Play
+Start: Open space_invaders.html in a web browser
+Controls:
+← → Arrow keys = Move
+SPACE = Fire
+Goal: Destroy as many enemy ships as possible before losing all 3 lives
+Scoring: Each destroyed enemy = 100 points
+How to Add Custom Graphics
+Step 1: Create Your PNG Files
+Prepare two PNG images:
+
+player-ship.png - Your player ship (recommended: 30x30 pixels)
+enemy-ship.png - Your enemy ship (recommended: 25x25 pixels)
+Step 2: Add to Images Folder
+Place your PNG files in the images/ folder:
+
+space_invaders.html
+images/
+  ├── player-ship.png
+  └── enemy-ship.png
+Step 3: Reload Game
+Simply refresh the page in your browser. The game will:
+
+Load your custom images
+Use them if found
+Fall back to geometric shapes if images fail to load
+Image Specifications
+Format: PNG (transparent backgrounds recommended)
+Player Ship Size: 30x30 pixels
+Enemy Ship Size: 25x25 pixels
+Transparency: Works best with PNG format for transparent backgrounds
+Game Mechanics
+Difficulty Progression
+Wave 1: Enemies spawn slowly
+Wave 2+: Enemies spawn faster and move quicker
+New wave every 500 points
+Enemy Behavior
+Enemies move down and side-to-side
+Enemies bounce off screen edges
+Enemies fire bullets at the player
+Enemies that reach the bottom disappear
+Collision System
+Player bullets destroy enemies (+100 points)
+Enemy bullets damage player (-1 life)
+Game ends when lives reach 0
+High Scores
+Automatically saved in browser localStorage
+Persists across page refreshes
+Shows top 3 scores in the sidebar
+Special ranking message on game over
+Technical Details
+Canvas Size: 800x600 pixels
+Frame Rate: 60 FPS (via requestAnimationFrame)
+Storage: Browser localStorage (key: spaceInvadersHighScores)
+Dependencies: None - vanilla HTML5/CSS3/JavaScript
+Tips for Better Performance
+Image Optimization: Keep PNG files small (< 50KB each)
+Browser: Works best on modern browsers (Chrome, Firefox, Safari, Edge)
+Clear Cache: If custom images don't appear, clear browser cache and reload
+Future Enhancement Ideas
+Sound effects
+Animation effects (explosions, screen shake)
+Difficulty settings (easy/normal/hard)
+Leaderboard sharing
+Mobile touch controls
+Power-ups system
+Boss enemies

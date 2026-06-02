@@ -2,9 +2,328 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Space Invaders</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: sans-serif;
+            color: #0f0;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+              .game-container {
+            display: flex;
+            flex-wrap: wrap; /* Automatically drops the sidebar underneath on small screens */
+            gap: 30px;
+            justify-content: center;
+        }
+
+        canvas {
+            border: 3px solid #0f0;
+            background: #001a00;
+        }
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            min-width: 200px;
+        }
+        .hud-section {
+            border: 2px solid #0f0;
+            padding: 15px;
+            background: rgba(0, 30, 0, 0.8);
+        }
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .game-over-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .game-over-content {
+            text-align: center;
+            border: 3px solid #0f0;
+            padding: 40px;
+            background: #001a00;
+        }
+        button {
+            padding: 12px 30px;
+            font-size: 18px;
+            background: #0f0;
+            color: #000;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
+    <h1>SPACE INVADERS</h1>
+    <div class="game-container">
+        <div>
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <p style="text-align: center; margin-top: 10px;">Arrows = Move | SPACE = Fire</p>
+        </div>
+        <div class="sidebar">
+            <div class="hud-section">
+                <div class="stat"><span>Score:</span><span id="scoreDisplay">0</span></div>
+                <div class="stat"><span>Lives:</span><span id="livesDisplay">3</span></div>
+                <div class="stat"><span>Wave:</span><span id="waveDisplay">1</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="game-over-overlay" id="gameOverOverlay">
+        <div class="game-over-content">
+            <h2>GAME OVER</h2>
+            <p id="finalScore" style="margin: 20px 0; font-size: 24px; color: #ff0;">Final Score: 0</p>
+            <button onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const PLAYER_SIZE = 30;
+        const ENEMY_SIZE = 25;
+        const BULLET_W = 4;
+        const BULLET_H = 12;
+        const P_SPEED = 6;
+        const PB_SPEED = 8;
+        const EB_SPEED = 4;
 
+        const gameState = {
+            player: { x: 385, y: 550, width: PLAYER_SIZE, height: PLAYER_SIZE, image: null }, // Added image: null here
+            enemies: [],
+            playerBullets: [],
+            enemyBullets: [],
+            score: 0,
+            lives: 3,
+            gameRunning: true,
+            wave: 1,
+            enemyDirection: 1,
+            enemySpeed: 1,
+            lastShotTime: 0,
+            shootCooldown: 400,
+            enemyImage: null // Added enemyImage: null here
+        };
+        const keys = { ArrowLeft: false, ArrowRight: false, ' ': false };
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key in keys) {
+                keys[e.key] = true;
+                e.preventDefault();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key in keys) {
+                keys[e.key] = false;
+            }
+        });
+        function loadImages() {
+            const pImg = new Image();
+            pImg.src = 'images/player-ship.png';
+            pImg.onload = () => { gameState.player.image = pImg; };
+
+            const eImg = new Image();
+            eImg.src = 'images/enemy-ship.png';
+            eImg.onload = () => { gameState.enemyImage = eImg; };
+        }
+
+        function initEnemies() {
+            const rows = 4;
+            const cols = 8;
+            gameState.enemies = [];
+            gameState.enemySpeed = 1 + (gameState.wave - 1) * 0.25;
+            gameState.enemyDirection = 1;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    gameState.enemies.push({
+                        x: 80 + c * 60,
+                        y: 60 + r * 45,
+                        width: ENEMY_SIZE,
+                        height: ENEMY_SIZE,
+                        points: (rows - r) * 10
+                    });
+                }
+            }
+        }
+
+        function checkCollision(r1, r2) {
+            return r1.x < r2.x + r2.width &&
+                   r1.x + r1.width > r2.x &&
+                   r1.y < r2.y + r2.height &&
+                   r1.y + r1.height > r2.y;
+        }
+        function update() {
+            if (!gameState.gameRunning) return;
+
+            if (keys.ArrowLeft) gameState.player.x -= P_SPEED;
+            if (keys.ArrowRight) gameState.player.x += P_SPEED;
+            gameState.player.x = Math.max(0, Math.min(800 - PLAYER_SIZE, gameState.player.x));
+
+            if (keys[' ']) {
+                const now = Date.now();
+                if (now - gameState.lastShotTime > gameState.shootCooldown) {
+                    gameState.playerBullets.push({
+                        x: gameState.player.x + 13,
+                        y: gameState.player.y,
+                        width: BULLET_W,
+                        height: BULLET_H
+                    });
+                    gameState.lastShotTime = now;
+                }
+            }
+
+            for (let i = gameState.playerBullets.length - 1; i >= 0; i--) {
+                gameState.playerBullets[i].y -= PB_SPEED;
+                if (gameState.playerBullets[i].y < 0) {
+                    gameState.playerBullets.splice(i, 1);
+                }
+            }
+
+            let hitWall = false;
+            gameState.enemies.forEach(e => {
+                e.x += gameState.enemySpeed * gameState.enemyDirection;
+                if (e.x <= 0 || e.x + ENEMY_SIZE >= 800) hitWall = true;
+            });
+
+            if (hitWall) {
+                gameState.enemyDirection *= -1;
+                gameState.enemies.forEach(e => {
+                    e.y += 25;
+                    if (e.y + ENEMY_SIZE >= gameState.player.y) endGame();
+                });
+            }
+
+            if (gameState.enemies.length > 0 && Math.random() < 0.015 + (gameState.wave * 0.005)) {
+                const rand = gameState.enemies[Math.floor(Math.random() * gameState.enemies.length)];
+                gameState.enemyBullets.push({
+                    x: rand.x + 10,
+                    y: rand.y + ENEMY_SIZE,
+                    width: BULLET_W,
+                    height: BULLET_H
+                });
+            }
+
+            for (let i = gameState.enemyBullets.length - 1; i >= 0; i--) {
+                gameState.enemyBullets[i].y += EB_SPEED;
+                if (gameState.enemyBullets[i].y > 600) {
+                    gameState.enemyBullets.splice(i, 1);
+                    continue;
+                }
+                if (checkCollision(gameState.enemyBullets[i], gameState.player)) {
+                    gameState.enemyBullets.splice(i, 1);
+                    gameState.lives--;
+                    document.getElementById('livesDisplay').innerText = gameState.lives;
+                    if (gameState.lives <= 0) endGame();
+                }
+            }
+
+            for (let i = gameState.playerBullets.length - 1; i >= 0; i--) {
+                let hit = false;
+                for (let j = gameState.enemies.length - 1; j >= 0; j--) {
+                    if (checkCollision(gameState.playerBullets[i], gameState.enemies[j])) {
+                        gameState.score += gameState.enemies[j].points;
+                        document.getElementById('scoreDisplay').innerText = gameState.score;
+                        gameState.enemies.splice(j, 1);
+                        hit = true;
+                        break;
+                    }
+                }
+                if (hit) gameState.playerBullets.splice(i, 1);
+            }
+
+            if (gameState.enemies.length === 0) {
+                gameState.wave++;
+                document.getElementById('waveDisplay').innerText = gameState.wave;
+                gameState.playerBullets = [];
+                gameState.enemyBullets = [];
+                initEnemies();
+            }
+        }
+        function draw() {
+            ctx.clearRect(0, 0, 800, 600);
+            ctx.fillStyle = '#0f0';
+            ctx.beginPath();
+            ctx.moveTo(gameState.player.x + 15, gameState.player.y);
+            ctx.lineTo(gameState.player.x, gameState.player.y + 30);
+            ctx.lineTo(gameState.player.x + 30, gameState.player.y + 30);
+            ctx.closePath();
+            ctx.fill();
+
+            gameState.enemies.forEach(e => {
+                ctx.fillStyle = '#f0f';
+                ctx.fillRect(e.x, e.y, e.width, e.height);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(e.x + 4, e.y + 6, 4, 4);
+                ctx.fillRect(e.x + 17, e.y + 6, 4, 4);
+            });
+
+            ctx.fillStyle = '#ff0';
+            gameState.playerBullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+
+            ctx.fillStyle = '#f33';
+            gameState.enemyBullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+        }
+
+        function gameLoop() {
+            try {
+                update();
+                draw();
+            } catch (err) {
+                console.error(err);
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameState.gameRunning = false;
+            document.getElementById('finalScore').innerText = "Final Score: " + gameState.score;
+            document.getElementById('gameOverOverlay').style.display = 'flex';
+        }
+
+        function restartGame() {
+            gameState.score = 0;
+            gameState.lives = 3;
+            gameState.wave = 1;
+            gameState.playerBullets = [];
+            gameState.enemyBullets = [];
+            gameState.player.x = 385;
+            document.getElementById('scoreDisplay').innerText = '0';
+            document.getElementById('livesDisplay').innerText = '3';
+            document.getElementById('waveDisplay').innerText = '1';
+            document.getElementById('gameOverOverlay').style.display = 'none';
+            initEnemies();
+            gameState.gameRunning = true;
+        }
+
+    // Call the loader here so the game searches your folder immediately
+        loadImages(); 
+        initEnemies();
+        requestAnimationFrame(gameLoop);
+    </script>
 </body>
 </html>
