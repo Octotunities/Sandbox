@@ -111,7 +111,7 @@
         const BULLET_H = 12;
         const P_SPEED = 6;
         const PB_SPEED = 8;
-        const EB_SPEED = 4;
+        const EB_SPEED = 2;
 
         const gameState = {
             player: { x: 385, y: 550, width: PLAYER_SIZE, height: PLAYER_SIZE, image: null }, // Added image: null here
@@ -218,7 +218,7 @@
                 });
             }
 
-            if (gameState.enemies.length > 0 && Math.random() < 0.015 + (gameState.wave * 0.005)) {
+            if (gameState.enemies.length > 0 && Math.random() < 0.005 + (gameState.wave * 0.005)) {
                 const rand = gameState.enemies[Math.floor(Math.random() * gameState.enemies.length)];
                 gameState.enemyBullets.push({
                     x: rand.x + 10,
@@ -264,30 +264,54 @@
                 initEnemies();
             }
         }
-        function draw() {
+               function draw() {
             ctx.clearRect(0, 0, 800, 600);
-            ctx.fillStyle = '#0f0';
-            ctx.beginPath();
-            ctx.moveTo(gameState.player.x + 15, gameState.player.y);
-            ctx.lineTo(gameState.player.x, gameState.player.y + 30);
-            ctx.lineTo(gameState.player.x + 30, gameState.player.y + 30);
-            ctx.closePath();
-            ctx.fill();
 
+            // Draw Player Ship PNG or Fallback Triangle
+            if (gameState.player.image) {
+                ctx.drawImage(gameState.player.image, gameState.player.x, gameState.player.y, gameState.player.width, gameState.player.height);
+            } else {
+                ctx.fillStyle = '#0f0';
+                ctx.beginPath();
+                ctx.moveTo(gameState.player.x + 15, gameState.player.y);
+                ctx.lineTo(gameState.player.x, gameState.player.y + 30);
+                ctx.lineTo(gameState.player.x + 30, gameState.player.y + 30);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Draw Alien Invader PNG or Fallback Blocks
             gameState.enemies.forEach(e => {
-                ctx.fillStyle = '#f0f';
-                ctx.fillRect(e.x, e.y, e.width, e.height);
-                ctx.fillStyle = '#000';
-                ctx.fillRect(e.x + 4, e.y + 6, 4, 4);
-                ctx.fillRect(e.x + 17, e.y + 6, 4, 4);
+                if (gameState.enemyImage) {
+                    ctx.drawImage(gameState.enemyImage, e.x, e.y, e.width, e.height);
+                } else {
+                    ctx.fillStyle = '#f0f';
+                    ctx.fillRect(e.x, e.y, e.width, e.height);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(e.x + 4, e.y + 6, 4, 4);
+                    ctx.fillRect(e.x + 17, e.y + 6, 4, 4);
+                }
             });
 
-            ctx.fillStyle = '#ff0';
-            gameState.playerBullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+                 // Draw Player Bullets as Round Circles
+            ctx.fillStyle = '#ffff00';
+            gameState.playerBullets.forEach(b => {
+                ctx.beginPath();
+                // Draws a circle at the bullet center with a 3-pixel radius
+                ctx.arc(b.x + b.width / 2, b.y + b.height / 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
 
-            ctx.fillStyle = '#f33';
-            gameState.enemyBullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+             // Draw Enemy Bullets as Round Circles
+            ctx.fillStyle = '#ff3333';
+            gameState.enemyBullets.forEach(b => {
+                ctx.beginPath();
+                ctx.arc(b.x + b.width / 2, b.y + b.height / 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
         }
+
+    
 
         function gameLoop() {
             try {
