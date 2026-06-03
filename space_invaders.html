@@ -111,7 +111,7 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const PLAYER_SIZE = 50;
+        const PLAYER_SIZE = 40;
         const ENEMY_SIZE = 50;
         const BULLET_W = 4;
         const BULLET_H = 12;
@@ -133,7 +133,8 @@
             lastShotTime: 0,
             shootCooldown: 400,
             isPaused: false, // ADDED: Tracks if the game is currently paused
-            enemyImages: []// CHANGED: Changed to a list array to hold multiple alien files
+            enemyImages: [],// CHANGED: Changed to a list array to hold multiple alien files
+            explosions: [] // ADDED: Stores active explosion particle bursts
         };
 
            
@@ -283,6 +284,19 @@
                     gameState.enemyBullets.splice(i, 1);
                     gameState.lives--;
                     document.getElementById('livesDisplay').innerText = gameState.lives;
+                           // ADDED: Generate a burst of 15 glowing explosion particles
+                    for (let p = 0; p < 15; p++) {
+                        gameState.explosions.push({
+                            // Center the burst exactly on the player ship
+                            x: gameState.player.x + PLAYER_SIZE / 2,
+                            y: gameState.player.y + PLAYER_SIZE / 2,
+                            // Give each particle a random velocity/speed direction
+                            vx: (Math.random() - 0.5) * 6,
+                            vy: (Math.random() - 0.5) * 6,
+                            radius: Math.random() * 4 + 2, // Random particle sizes
+                            alpha: 1 // Starting opacity (fully visible)
+                        });
+                    }
                     if (gameState.lives <= 0) endGame();
                 }
             }
@@ -307,6 +321,18 @@
                 gameState.playerBullets = [];
                 gameState.enemyBullets = [];
                 initEnemies();
+            }
+            // PASTE YOUR PARTICLE PHYSICS LOOP RIGHT HERE:
+            // ADDED: Update particle movements and delete them when faded
+            for (let i = gameState.explosions.length - 1; i >= 0; i--) {
+                let exp = gameState.explosions[i];
+                exp.x += exp.vx;
+                exp.y += exp.vy;
+                exp.alpha -= 0.03; // Slowly fade out each frame
+                
+                if (exp.alpha <= 0) {
+                    gameState.explosions.splice(i, 1); // Delete if invisible
+                }
             }
         }
                function draw() {
@@ -357,7 +383,17 @@
                 ctx.beginPath();
                 ctx.arc(b.x + b.width / 2, b.y + b.height / 2, 3, 0, Math.PI * 2);
                 ctx.fill();
-
+            });
+  // PASTE YOUR PARTICLE DRAWING LOOP RIGHT HERE:
+            // Draw active explosion fire particles onto the canvas frame
+            gameState.explosions.forEach(exp => {
+                ctx.save();
+                ctx.globalAlpha = exp.alpha;
+                ctx.fillStyle = Math.random() > 0.5 ? '#ff9900' : '#ff3333';
+                ctx.beginPath();
+                ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
            
             });
                  // ADDED: Renders a large neon "PAUSED" message directly over the gameplay canvas area
