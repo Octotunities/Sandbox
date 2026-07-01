@@ -344,6 +344,43 @@
       line-height: 1.4;
     }
 
+    #levelPreviewOverlay .card {
+      text-align: center;
+      width: min(92vw, 540px);
+    }
+
+    #levelPreviewTitle {
+      margin: 0;
+      font-size: clamp(24px, 6vw, 38px);
+      color: var(--yellow);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    #levelPreviewText {
+      margin: 8px 0 14px;
+      color: #d3e5ff;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .preview-map-frame {
+      width: min(74vw, 360px);
+      aspect-ratio: 1 / 1;
+      margin: 0 auto;
+      border-radius: 12px;
+      border: 1px solid rgba(180, 205, 255, 0.75);
+      background: rgba(6, 10, 26, 0.9);
+      box-shadow: inset 0 0 18px rgba(50, 208, 255, 0.12), 0 0 20px rgba(50, 208, 255, 0.22);
+      overflow: hidden;
+    }
+
+    #levelPreviewMap {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
     .hud-grid {
       display: grid;
       grid-template-columns: repeat(5, minmax(62px, auto));
@@ -698,6 +735,15 @@
       </div>
     </div>
 
+    <div id="levelPreviewOverlay" class="overlay">
+      <div class="card">
+        <h2 id="levelPreviewTitle">Level 1</h2>
+        <p id="levelPreviewText">Study the labyrinth, then start when ready.</p>
+        <div class="preview-map-frame"><canvas id="levelPreviewMap"></canvas></div>
+        <div class="overlay-actions"><button id="levelStartBtn">Start</button></div>
+      </div>
+    </div>
+
     <div id="hud">
       <div class="hud-grid">
         <div class="pill">Level <strong id="levelEl">1</strong></div>
@@ -747,37 +793,220 @@
     (function () {
       "use strict";
 
-      // Global configuration
+      /*
+       * LABYRINTH JAVASCRIPT READER'S GUIDE
+       * ====================================
+       *
+       * This script creates the whole playable Labyrinth game. It loads a 3D
+       * engine when possible, builds a random maze, places the player in that
+       * maze, reads keyboard/mouse/touch input, checks collisions, tracks the
+       * timer and score, and draws the scene every animation frame.
+       *
+       * A helpful way to understand the program is to follow the boot process:
+       *
+       * 1. boot()
+       *    This is the entry point at the bottom of the script. It checks device
+       *    quality, tries to load Three.js, falls back to a simple canvas renderer
+       *    if Three.js fails, connects all controls, opens the menu, then starts
+       *    tick(), the main game loop.
+       *
+       * 2. detectQualityProfile(), loadThreeWithProgress(), initThree(),
+       *    initRayRenderer(), onResize()
+       *    These functions prepare graphics. The game prefers Three.js because it
+       *    can draw a richer 3D world. If that library is unavailable, the game
+       *    switches to a raycasting renderer that draws a simpler 3D-like view on
+       *    a normal canvas. This fallback is why the game can still run when the
+       *    network or CDN is unavailable.
+       *
+       * 3. setupInput(), setupUIEvents(), bindJoystick()
+       *    These functions connect the player to the game. Keyboard, mouse,
+       *    touch joysticks, hint buttons, menu buttons, score buttons, and escape
+       *    buttons all update shared state. The actual movement happens later in
+       *    updatePlayer(), so input collection and physics stay separate.
+       *
+       * 4. startRun(), continueRun(), prepareLevel(), generateMaze(),
+       *    showLevelPreview()
+       *    These functions begin gameplay. A level is prepared by calculating
+       *    maze size, generating a maze, choosing an exit, placing the player in
+       *    the center, setting the timer, and building the visible world. The
+       *    preview map is then shown, and active play begins only after Start.
+       *
+       * 5. buildWorld(), cellToWorld(), worldToCell()
+       *    The maze is stored as a grid of cells, but the camera and walls use
+       *    world coordinates. These functions translate between those two views.
+       *    buildWorld() turns maze data into meshes for Three.js, or stores only
+       *    the dimensions needed by the fallback renderer.
+       *
+       * 6. tick(), updatePlayer(), tryMoveAxis(), applyWallCollisionBuffer(),
+       *    checkExitCross()
+       *    tick() runs once per animation frame. It lowers the timer, moves the
+       *    player, prevents wall clipping, checks whether the exit has been
+       *    crossed, updates hints and the HUD, adjusts graphics quality, and
+       *    finally renders the frame.
+       *
+       * 7. shortestPath(), activateHint(), updateHintVisuals(), drawMinimap()
+       *    These functions power the hint system. shortestPath() uses breadth-
+       *    first search to find the quickest route through the maze. activateHint()
+       *    spends one hint and stores the path. updateHintVisuals() lights up the
+       *    world, and drawMinimap() shows a temporary overhead map.
+       *
+       * 8. onLevelComplete(), onTimerExpired(), onLifeLost(), onGameOver(),
+       *    levelClearBonus(), cumulativeScoreUntilLevel()
+       *    These functions manage game rules: scoring, level transitions, lives,
+       *    timeouts, game over, and continuing from saved progress.
+       *
+       * 9. loadProgress(), saveProgress(), loadScores(), saveScores(),
+       *    qualifiesForTop10(), insertScore(), renderScoresInto()
+       *    These functions use localStorage so progress and high scores survive
+       *    page reloads. They also protect the game from broken or edited stored
+       *    data by checking and cleaning values before using them.
+       *
+       * 10. Small helper functions such as clamp(), lerp(), sleep(), randInt(),
+       *     keyForCell(), levelHue01(), and hslCss()
+       *     These are reusable tools. They do not represent game rules by
+       *     themselves, but many larger functions rely on them to keep numbers in
+       *     safe ranges, animate smoothly, choose random cells, or create colors.
+       *
+       * Function catalog
+       * ----------------
+       * clamp(v, min, max): keeps a number from going below min or above max.
+       * lerp(a, b, t): finds a smooth in-between value from a toward b.
+       * sleep(ms): creates a timed pause for async code without freezing the page.
+       * levelHue01(): turns the level number into a repeating color hue.
+       * hslCss(h, s, l): converts game color values into a CSS color string.
+       * getHintGlowTexture(): creates and reuses a soft glow texture for effects.
+       * waitForLevelContinue(): pauses a level transition until Continue is clicked.
+       * waitForTimeoutContinue(): pauses a timeout message until Continue is clicked.
+       * waitForLevelStart(): pauses prepared levels until the Start button is clicked.
+       * setBar(pct, text): updates the loading progress bar and label.
+       * detectQualityProfile(): chooses graphics settings based on device clues.
+       * randInt(min, max): chooses a random whole number in a range.
+       * keyForCell(x, y): creates a Map/Set key for one maze cell.
+       * loadProgress(): reads the highest unlocked level from localStorage.
+       * saveProgress(highest): saves the highest unlocked level.
+       * loadScores(): reads, cleans, sorts, and trims the high-score list.
+       * saveScores(scores): saves the top-10 high-score list.
+       * qualifiesForTop10(value): checks whether a score can enter the leaderboard.
+       * insertScore(name, value, lvl): adds a score and returns its rank.
+       * renderScoresInto(tableId): draws the high-score table into the page.
+       * loadThreeWithProgress(): tries local and CDN Three.js sources with progress.
+       * isSameOriginUrl(url): checks whether fetch can safely read a script URL.
+       * loadThreeFromFetch(...): downloads and runs a same-origin Three.js script.
+       * loadThreeViaScriptTag(...): loads a CDN script with a script tag fallback.
+       * initRayRenderer(): creates the backup 2D canvas renderer.
+       * renderRayFrame(now): draws one fallback first-person frame with raycasting.
+       * raycastDistance(...): measures how far one ray travels before hitting a wall.
+       * showOverlay(el, on): shows or hides a menu-style overlay.
+       * applyUIState(): matches visible UI to the current game state.
+       * updateHUD(): refreshes level, time, lives, hints, and score displays.
+       * levelSizeFor(lvl): calculates maze size for a level.
+       * hintsForLevel(lvl): calculates hint count for a level.
+       * timerFromOptimalRoute(): calculates fair time from the shortest route.
+       * escapeToMenuAndScores(): leaves play mode and shows scores safely.
+       * levelClearBonus(...): calculates points for completing a level.
+       * cumulativeScoreUntilLevel(lvl): estimates score when continuing progress.
+       * makeCell(): creates one sealed maze cell.
+       * generateMaze(size): builds a random, solvable maze with a few optional loops.
+       * cellToWorld(cx, cy): converts grid cells to 3D positions.
+       * worldToCell(x, z): converts 3D positions back to grid cells.
+       * buildWorld(): creates the visible maze, exit marker, lights, and effects.
+       * initThree(): creates the Three.js renderer, scene, camera, and mouse look.
+       * onResize(): resizes the active renderer when the browser size changes.
+       * setupInput(): connects keyboard, mouse, touch, hint, and escape controls.
+       * bindJoystick(...): creates one reusable touch joystick.
+       * pointFromTouch(t): extracts x/y screen coordinates from a touch.
+       * reset(): returns a joystick to neutral after touch ends.
+       * endTouch(e): resets a joystick only when its active touch ends.
+       * startRun(startLevel): begins a new score run and opens level preview.
+       * continueRun(): starts from the highest saved level and opens preview.
+       * prepareLevel(lvl, freshLives): resets level state and builds a new maze.
+       * updateProgressIfNeeded(): saves newly reached levels.
+       * hasWall(cx, cy, dir): checks whether a cell has a wall on one side.
+       * withinBoundsCell(cx, cy): checks whether cell coordinates are valid.
+       * canCrossFromCell(...): checks whether movement between two cells is legal.
+       * applyWallCollisionBuffer(): keeps the player away from wall planes.
+       * tryMoveAxis(dx, dz): moves the player while sliding along walls.
+       * checkExitCross(): detects when the player crosses the open exit edge.
+       * onLevelComplete(): scores a level and starts the next-level transition.
+       * onLifeLost(): removes a life or ends the run.
+       * onTimerExpired(): shows timeout feedback before life loss.
+       * onGameOver(): shows the final score and leaderboard entry state.
+       * shortestPath(...): finds the quickest route through the maze using BFS.
+       * activateHint(): spends a hint and stores the route to the exit.
+       * updateHintVisuals(now): animates hint beams, floor highlights, and minimap fade.
+       * drawMinimap(): draws the temporary overhead maze map.
+       * drawMazeMap(...): draws maze data into any square canvas.
+       * showLevelPreview(): displays the before-level map and Start button.
+       * updateNorthPointer(): rotates the compass to match the player's view.
+       * updatePlayer(dt): converts input into camera/player movement.
+       * tick(): runs the frame-by-frame game loop and rendering.
+       * openMenu(): displays the start menu and Continue state.
+       * setupUIEvents(): connects menu and score buttons to game actions.
+       * boot(): starts the entire application.
+       *
+       * In short: boot() starts the app, prepareLevel() creates a maze,
+       * showLevelPreview() lets the player study it, tick() keeps the game alive
+       * frame by frame, updatePlayer() moves the player, buildWorld()/
+       * renderRayFrame() draw the maze, and the scoring/storage functions
+       * remember what the player achieved.
+       */
+
+      /*
+       * Global configuration for the whole game.
+       *
+       * Keeping these values together makes the game easier to tune and easier
+       * to teach from: learners can change one number here, reload, and see the
+       * effect without hunting through the render, input, and scoring code.
+       */
       const CFG = {
+        // UI safe-area offsets keep the HUD and touch controls away from phone notches and browser chrome.
         SAFE_TOP: 56,
         SAFE_BOTTOM: 84,
+        // Maze sizes stay odd so the start cell can sit exactly in the center.
         START_SIZE: 9,
+        // Each level grows by four cells per side; this makes difficulty rise quickly without exploding the object count too soon.
         SIZE_INCREMENT: 4,
-        TIMER_ROUTE_FACTOR: 2,
-        TIMER_ROUTE_FACTOR_MOBILE: 3,
+        // Timers are based on the mathematically shortest route, then multiplied to allow real player mistakes and optional exploration.
+        TIMER_ROUTE_FACTOR: 3,
+        // Touch controls are slower and less precise, so mobile players receive a larger time allowance.
+        TIMER_ROUTE_FACTOR_MOBILE: 4,
         START_LIVES: 3,
+        // After the main maze is carved, this opens a few extra internal walls to add loops and tempting wrong turns.
+        MAZE_EXTRA_OPENING_RATE: 0.055,
+        // Hints are deliberately short: enough to teach direction, not enough to solve the whole maze for free.
         HINT_SECONDS: 5,
         HINT_SEGMENT_CELLS: 8,
+        // World measurements are in arbitrary 3D units; cell size must remain larger than wall thickness and collision buffer.
         CELL_SIZE: 4,
         WALL_HEIGHT: 2.4,
         WALL_THICKNESS: 0.28,
+        // Movement values are tuned for first-person play; high speed makes wall collision feel jumpy.
         MOVE_SPEED: 5.2,
         MOVE_ACCEL: 12.5,
         MOVE_DECEL: 10.5,
         MOUSE_SENS: 0.0024,
         TOUCH_LOOK_SENS: 1.9,
+        // Smoothing reduces touch jitter, but too much makes the camera feel delayed.
         LOOK_SMOOTH: 0.18,
+        // Pitch limits stop the player from flipping the camera upside down.
         MAX_PITCH: Math.PI * 0.47,
+        // Mobile pitch is narrower to reduce motion sickness and accidental vertical drift.
         MAX_PITCH_MOBILE: Math.PI / 6,
+        // Buffer keeps the camera away from wall planes; it must stay below half a cell.
         COLLISION_BUFFER: 0.38,
+        // The minimap is capped below the main frame rate because it is helpful but not gameplay-critical.
         MINIMAP_FPS: 14,
+        // Device heuristics are intentionally simple because browser hardware data is limited and sometimes unavailable.
         LOW_END_DEVICE_CORES: 4,
         LOW_END_DEVICE_MEM_GB: 4,
+        // FPS sampling values avoid reacting to one bad frame; quality adjusts only after a short trend.
         FPS_SAMPLE_SECONDS: 2,
         FPS_DROP_THRESHOLD: 27,
         FPS_RAISE_THRESHOLD: 52,
+        // Pixel ratio limits protect battery and low-end GPUs while keeping the scene readable.
         PIXEL_RATIO_MIN: 0.85,
         PIXEL_RATIO_STEP: 0.1,
+        // Level hue rotates the palette; modulo math in levelHue01 keeps it inside the HSL 0..1 range.
         LEVEL_HUE_STEP: 0.11,
         LEVEL_UP_CELEBRATE_MS: 1200,
         LEVEL_UP_LOAD_MS: 1100,
@@ -801,7 +1030,12 @@
       document.documentElement.style.setProperty("--safe-top", CFG.SAFE_TOP + "px");
       document.documentElement.style.setProperty("--safe-bottom", CFG.SAFE_BOTTOM + "px");
 
-      // UI elements
+      /*
+       * Cached UI element references.
+       *
+       * getElementById is inexpensive, but storing these references makes later
+       * functions read like game logic instead of repeated DOM lookups.
+       */
       const loadingEl = document.getElementById("loading");
       const barFill = document.getElementById("barFill");
       const barText = document.getElementById("barText");
@@ -819,6 +1053,12 @@
       const timeoutTitle = document.getElementById("timeoutTitle");
       const timeoutText = document.getElementById("timeoutText");
       const timeoutContinueBtn = document.getElementById("timeoutContinueBtn");
+      const levelPreviewOverlay = document.getElementById("levelPreviewOverlay");
+      const levelPreviewTitle = document.getElementById("levelPreviewTitle");
+      const levelPreviewText = document.getElementById("levelPreviewText");
+      const levelPreviewMap = document.getElementById("levelPreviewMap");
+      const levelPreviewCtx = levelPreviewMap.getContext("2d");
+      const levelStartBtn = document.getElementById("levelStartBtn");
 
       const newRunBtn = document.getElementById("newRunBtn");
       const continueBtn = document.getElementById("continueBtn");
@@ -859,7 +1099,13 @@
       const minimapCanvas = document.getElementById("minimap");
       const minimapCtx = minimapCanvas.getContext("2d");
 
-      // Runtime state
+      /*
+       * Runtime state for rendering.
+       *
+       * The game normally uses Three.js, but it can fall back to a simple canvas
+       * ray renderer. These variables are nullable because only one renderer is
+       * active at a time.
+       */
       let THREE = null;
       let renderer, scene, camera;
       let renderMode = "three";
@@ -871,7 +1117,14 @@
       let rayCanvas = null;
       let rayCtx = null;
 
-      let gameState = "boot"; // boot, menu, playing, gameover
+      /*
+       * Runtime state for the current run.
+       *
+       * These values change while the player plays. They are deliberately kept
+       * separate from CFG so that resetting a run never changes the constants
+       * that define the game's rules.
+       */
+      let gameState = "boot"; // Allowed states: boot, menu, preview, playing, gameover.
       let level = 1;
       let mazeSize = CFG.START_SIZE;
       let lives = CFG.START_LIVES;
@@ -884,6 +1137,11 @@
       let startCell = null;
       let mazeHalfWorld = 0;
 
+      /*
+       * Player position is stored in world coordinates for smooth movement, and
+       * also copied to cell coordinates for maze decisions such as collision,
+       * hints, and exit detection.
+       */
       let player = {
         pos: { x: 0, z: 0 },
         yaw: 0,
@@ -892,8 +1150,10 @@
         cellY: 0,
       };
 
+      // Object.create(null) gives a clean dictionary with no inherited keys such as "constructor".
       let keyState = Object.create(null);
       let pointerLocked = false;
+      // Input is separated from velocity so acceleration and smoothing can be applied each frame.
       let moveInput = { x: 0, y: 0 };
       let lookInput = { x: 0, y: 0 };
       let mobileLookInverted = false;
@@ -901,6 +1161,7 @@
       let lookVel = { x: 0, y: 0 };
 
       let hintActiveUntil = 0;
+      // The short segment is rendered in-world; the full path is shown on the minimap while the hint is active.
       let hintPathSegment = [];
       let fullHintPath = [];
       let lastSavedRank = null;
@@ -908,8 +1169,10 @@
       let toastUntil = 0;
       let isLevelTransition = false;
       let isTimeoutTransition = false;
+      // These resolver functions let button clicks continue async transition flows without blocking the UI thread.
       let levelContinueResolver = null;
       let timeoutContinueResolver = null;
+      let levelStartResolver = null;
       const isCoarsePointer = window.matchMedia
         ? window.matchMedia("(hover: none) and (pointer: coarse)").matches
         : false;
@@ -920,32 +1183,68 @@
         maxPixelRatio: 1.8,
         fogDensity: 0.026,
       };
+      // Rolling frame counter used to adjust render resolution when performance changes.
       let fpsSample = {
         accum: 0,
         frames: 0,
       };
 
+      // Three.js floor meshes are saved here so hints can temporarily recolor the right cells.
       const floorHighlights = [];
       const progressData = loadProgress();
+      // The glow texture is generated once and reused by hint beams, the exit glow, and the sun halo.
       let hintGlowTexture = null;
 
-      // Utility
+      // Utility helpers -------------------------------------------------------
+      /*
+       * clamp() keeps a number inside a safe range.
+       *
+       * Example: clamp(120, 0, 100) returns 100. This is used for values like
+       * loading bar percentages, color amounts, opacity, and player position.
+       * Without clamping, a calculation could create impossible values such as
+       * 140% progress or a camera angle outside the intended limit.
+       */
       function clamp(v, min, max) {
         return v < min ? min : (v > max ? max : v);
       }
 
+      /*
+       * lerp() means "linear interpolation." It returns a value partway between
+       * a and b. When t is 0, the answer is a. When t is 1, the answer is b.
+       * Values between 0 and 1 create smooth movement, color blending, and camera
+       * easing instead of instant jumps.
+       */
       function lerp(a, b, t) {
         return a + (b - a) * t;
       }
 
+      /*
+       * sleep() creates a Promise that resolves after a number of milliseconds.
+       * It is useful with async/await when the code needs to pause briefly without
+       * freezing the browser. This helper is currently available for timed flows
+       * even though most transitions are controlled by button-click promises.
+       */
       function sleep(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
       }
 
+      /*
+       * levelHue01() turns the current level number into a color position between
+       * 0 and 1. HSL colors use this style of circular hue value, so the modulo
+       * operator (%) lets the palette wrap around instead of growing forever.
+       */
+      // Convert the level number into a repeating 0..1 hue value for HSL colors.
       function levelHue01() {
         return ((level - 1) * CFG.LEVEL_HUE_STEP) % 1;
       }
 
+      /*
+       * hslCss() converts normalized color values into a CSS hsl(...) string.
+       * The function accepts hue, saturation, and lightness as 0..1 style values,
+       * clamps saturation/lightness for safety, and turns them into the degrees
+       * and percentages that CSS expects.
+       */
+      // Convert normalized HSL values into a CSS hsl(...) string.
       function hslCss(h, s, l) {
         const hh = Math.round((((h % 1) + 1) % 1) * 360);
         const ss = Math.round(clamp(s, 0, 1) * 100);
@@ -953,7 +1252,16 @@
         return "hsl(" + hh + ", " + ss + "%, " + ll + "%)";
       }
 
+      /*
+       * getHintGlowTexture() creates a soft circular glow image in memory.
+       *
+       * Instead of loading a separate PNG file, the code draws a radial gradient
+       * on a tiny canvas and turns that canvas into a Three.js texture. The result
+       * is reused for hint beams, exit glow, and the sun halo. Reusing one texture
+       * saves memory and avoids doing the same drawing work every frame.
+       */
       function getHintGlowTexture() {
+        // CanvasTexture avoids loading an image file and keeps the glow scalable.
         if (hintGlowTexture) return hintGlowTexture;
         const canvas = document.createElement("canvas");
         canvas.width = 256;
@@ -974,13 +1282,25 @@
         return hintGlowTexture;
       }
 
+      /*
+       * waitForLevelContinue() pauses an async level-transition sequence until
+       * the player presses the Continue button. It does not block the page; it
+       * simply stores the Promise resolver so the button handler can resume the
+       * sequence later.
+       */
       function waitForLevelContinue() {
+        // The Promise resolves only when the player presses the transition button.
         return new Promise((resolve) => {
           levelContinueResolver = resolve;
           if (levelContinueBtn) levelContinueBtn.disabled = false;
         });
       }
 
+      /*
+       * waitForTimeoutContinue() works like waitForLevelContinue(), but for the
+       * "time expired" message. Separating the two resolvers prevents a click on
+       * one overlay from accidentally continuing a different overlay.
+       */
       function waitForTimeoutContinue() {
         return new Promise((resolve) => {
           timeoutContinueResolver = resolve;
@@ -988,13 +1308,43 @@
         });
       }
 
+      /*
+       * waitForLevelStart() pauses a prepared level until the player clicks the
+       * Start button on the preview map. This keeps the timer, movement, and
+       * collision updates from beginning while the player is still studying the
+       * level layout.
+       */
+      function waitForLevelStart() {
+        return new Promise((resolve) => {
+          levelStartResolver = resolve;
+          if (levelStartBtn) levelStartBtn.disabled = false;
+        });
+      }
+
+      /*
+       * setBar() updates the loading progress bar and its text. The percentage is
+       * clamped from 0 to 100 because CSS widths outside that range would either
+       * hide the bar or make it spill out of its container.
+       */
       function setBar(pct, text) {
+        // Clamp progress so visual width never exceeds the loader's 0..100% range.
         const v = clamp(pct, 0, 100);
         barFill.style.width = v.toFixed(1) + "%";
         barText.textContent = text || (Math.round(v) + "%");
       }
 
+      /*
+       * detectQualityProfile() chooses a starting graphics profile. Browsers only
+       * give rough hardware clues, so this function makes a careful guess using
+       * device memory, CPU cores, touch support, and screen width. The game can
+       * still adjust pixel ratio later if the frame rate proves the guess wrong.
+       */
       function detectQualityProfile() {
+        /*
+         * Browser hardware hints are optional and approximate. This profile is
+         * therefore conservative: if a device looks touch-first or low-powered,
+         * the game starts lighter and can still adjust pixel ratio while running.
+         */
         const mem = Number(navigator.deviceMemory || 0);
         const cores = Number(navigator.hardwareConcurrency || 0);
         const touch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
@@ -1008,15 +1358,34 @@
         quality.fogDensity = lowEnd ? 0.022 : 0.026;
       }
 
+      /*
+       * randInt() returns a random whole number between min and max, including
+       * both ends. Maze generation uses it to choose a random neighbor and a
+       * random exit so each level feels different.
+       */
       function randInt(min, max) {
+        // Inclusive random integer, useful for choosing maze branches and exits.
         return Math.floor(Math.random() * (max - min + 1)) + min;
       }
 
+      /*
+       * keyForCell() turns x/y grid coordinates into a single string key.
+       * JavaScript Sets and Maps compare arrays by identity, not by their
+       * contents, so "3,4" is a simpler and reliable way to remember that a cell
+       * has been seen.
+       */
       function keyForCell(x, y) {
+        // A stable string key lets Sets and Maps track cells without nested arrays.
         return x + "," + y;
       }
 
+      /*
+       * loadProgress() reads the highest unlocked level from localStorage.
+       * Because localStorage can be missing, blocked, or edited by the user, the
+       * function is defensive: it catches errors and falls back to level 1.
+       */
       function loadProgress() {
+        // localStorage can fail in private browsing or restricted contexts, so all storage reads are guarded.
         try {
           const raw = localStorage.getItem(CFG.STORAGE_PROGRESS);
           if (!raw) {
@@ -1031,7 +1400,13 @@
         }
       }
 
+      /*
+       * saveProgress() writes the highest unlocked level to localStorage. It
+       * saves only one small number because the maze itself is generated fresh
+       * each time and does not need to be stored.
+       */
       function saveProgress(highest) {
+        // Progress is intentionally tiny: only the highest unlocked level is persisted.
         try {
           localStorage.setItem(CFG.STORAGE_PROGRESS, JSON.stringify({ highestLevel: highest }));
         } catch (_) {
@@ -1039,7 +1414,14 @@
         }
       }
 
+      /*
+       * loadScores() reads the high-score table. It checks that the stored value
+       * is an array, cleans each record, limits names to 16 characters, sorts by
+       * score, and returns only the top 10. This keeps the UI stable even if the
+       * saved data is old, broken, or manually edited.
+       */
       function loadScores() {
+        // Stored score data is sanitized because localStorage is user-editable text.
         try {
           const raw = localStorage.getItem(CFG.STORAGE_SCORES);
           if (!raw) return [];
@@ -1058,7 +1440,13 @@
         }
       }
 
+      /*
+       * saveScores() writes the high-score table back to localStorage. The slice
+       * keeps the saved list at 10 records because the game only displays a top
+       * 10 board and extra records would never be used.
+       */
       function saveScores(scores) {
+        // Only the visible top 10 are saved to keep storage small and table rendering simple.
         try {
           localStorage.setItem(CFG.STORAGE_SCORES, JSON.stringify(scores.slice(0, 10)));
         } catch (_) {
@@ -1066,13 +1454,26 @@
         }
       }
 
+      /*
+       * qualifiesForTop10() decides whether a finished run deserves name entry.
+       * If the board has fewer than 10 scores, any score qualifies. Otherwise the
+       * new score must beat the current 10th-place score.
+       */
       function qualifiesForTop10(value) {
+        // A score qualifies if the board is not full or it beats the current last place.
         const list = loadScores();
         if (list.length < 10) return true;
         return value > list[list.length - 1].score;
       }
 
+      /*
+       * insertScore() adds a new score, sorts the table, trims it to 10 entries,
+       * saves it, and returns the player's rank if the score remains on the board.
+       * The name is trimmed and shortened so one very long name cannot break the
+       * score layout on small screens.
+       */
       function insertScore(name, value, lvl) {
+        // Names are trimmed to 16 characters so the score table remains readable on phones.
         const list = loadScores();
         list.push({
           name: String(name || "Anon").trim().slice(0, 16) || "Anon",
@@ -1086,7 +1487,13 @@
         return rank >= 0 ? rank + 1 : null;
       }
 
+      /*
+       * renderScoresInto() fills a score table in the page. It always creates 10
+       * rows, using dashes for empty places, so the table has a predictable shape
+       * before and after new scores are added.
+       */
       function renderScoresInto(tableId) {
+        // The table is always rendered with 10 rows so the UI does not jump as scores are added.
         const table = document.getElementById(tableId);
         if (!table) return;
         const tbody = table.querySelector("tbody");
@@ -1118,7 +1525,21 @@
         }
       }
 
+      /*
+       * loadThreeWithProgress() tries to load the Three.js graphics library.
+       *
+       * The game first tries local files, which are best for offline or PWA-style
+       * use. If those fail, it tries CDN URLs. Each attempt gets a portion of the
+       * loading bar so the player sees progress instead of a frozen screen.
+       * If every source fails, boot() catches the error and uses the fallback
+       * canvas renderer instead.
+       */
       async function loadThreeWithProgress() {
+        /*
+         * Try local Three.js first for offline/PWA use, then CDN URLs for plain
+         * static hosting. Each source owns a slice of the progress bar so the
+         * loader still feels responsive during retries.
+         */
         const localSources = CFG.THREE_LOCAL_PATHS.map((url) => ({ url, label: "local" }));
         const cdnSources = CFG.THREE_CDN_PATHS.map((url) => ({ url, label: "cdn" }));
         const sources = localSources.concat(cdnSources);
@@ -1150,7 +1571,14 @@
         throw new Error("Failed to load 3D engine from local assets or CDN. " + errors.join(" | "));
       }
 
+      /*
+       * isSameOriginUrl() checks whether a URL comes from the same origin as the
+       * current page. Same-origin scripts can usually be fetched directly, which
+       * lets the game show real byte-download progress. Cross-origin scripts are
+       * usually loaded with a script tag because CORS may block direct fetches.
+       */
       function isSameOriginUrl(url) {
+        // Same-origin scripts can be fetched for byte progress; cross-origin scripts usually cannot because of CORS.
         try {
           return new URL(url, location.href).origin === location.origin;
         } catch (_) {
@@ -1158,7 +1586,14 @@
         }
       }
 
+      /*
+       * loadThreeFromFetch() downloads a script using fetch(), reads it in
+       * chunks, updates the loading bar as bytes arrive, and then executes the
+       * downloaded code. This path is mainly for local files where the browser
+       * allows direct access to the response body.
+       */
       async function loadThreeFromFetch(url, label, phaseStart, phaseEnd) {
+        // Fetching locally lets us update the loading bar from streamed byte counts.
         setBar(phaseStart, "Loading " + label + " engine...");
         const res = await fetch(url, { cache: "force-cache" });
         if (!res.ok) throw new Error("HTTP " + res.status);
@@ -1200,7 +1635,15 @@
         if (!window.THREE) throw new Error("THREE global missing after compile");
       }
 
+      /*
+       * loadThreeViaScriptTag() loads Three.js by adding a <script> element to
+       * the document. This method cannot show exact byte progress, so it gently
+       * advances the progress bar while the browser loads the file. It is more
+       * compatible with CDN files because script tags are allowed in more cases
+       * than cross-origin fetch().
+       */
       function loadThreeViaScriptTag(url, label, phaseStart, phaseEnd) {
+        // Script tags are the most compatible fallback for CDN-hosted libraries.
         return new Promise((resolve, reject) => {
           const script = document.createElement("script");
           script.src = url;
@@ -1232,7 +1675,18 @@
         });
       }
 
+      /*
+       * initRayRenderer() prepares the backup renderer. It creates a normal
+       * canvas, gets a 2D drawing context, and creates a small clock object with
+       * the same getDelta() style used by Three.js. Matching the clock interface
+       * lets the rest of the game loop work with either renderer.
+       */
       function initRayRenderer() {
+        /*
+         * Fallback renderer used when Three.js cannot load. It draws a fake 3D
+         * scene with 2D canvas raycasting, so the game remains playable offline
+         * or on networks that block the CDN.
+         */
         rayCanvas = document.createElement("canvas");
         rayCanvas.style.width = "100%";
         rayCanvas.style.height = "100%";
@@ -1251,7 +1705,16 @@
         onResize();
       }
 
+      /*
+       * renderRayFrame() draws one frame of the fallback first-person view.
+       *
+       * It paints sky and floor gradients, casts many simple rays outward from
+       * the player, and draws vertical wall slices based on how far away each ray
+       * hits a wall. This creates a "fake 3D" maze view without WebGL. It is less
+       * detailed than Three.js, but it keeps the game playable.
+       */
       function renderRayFrame(now) {
+        // Draw one first-person frame for the fallback renderer.
         if (!rayCtx || !rayCanvas) return;
 
         const w = rayCanvas.clientWidth || window.innerWidth;
@@ -1266,6 +1729,7 @@
         rayCtx.fillStyle = sky;
         rayCtx.fillRect(0, 0, w, h * 0.55);
 
+        // Field of view is wide enough for navigation but narrow enough to reduce fisheye distortion.
         const fov = Math.PI * 0.62;
 
         // Always-visible orientation cue: sun fixed to the south.
@@ -1304,6 +1768,7 @@
         if (!maze) return;
 
         const maxDist = Math.max(30, mazeSize * CFG.CELL_SIZE * 0.95);
+        // Larger steps and wider columns trade detail for speed on lower-end devices.
         const rayStep = quality.lowEnd ? 0.22 : 0.14;
         const colWidth = quality.lowEnd ? 2 : 1;
 
@@ -1333,7 +1798,18 @@
         }
       }
 
+      /*
+       * raycastDistance() is the helper used by renderRayFrame(). It walks
+       * forward along one angle in small steps. When the sample point enters a
+       * new cell, the function asks whether the wall between the old and new cell
+       * is open. If it is closed, the ray hit a wall and returns that distance.
+       */
       function raycastDistance(angle, maxDist, stepDist) {
+        /*
+         * Step forward along one ray until it crosses a wall. This is simpler
+         * than a full grid DDA raycaster, but small step distances are required
+         * so thin walls are not skipped.
+         */
         const sin = Math.sin(angle);
         const cos = Math.cos(angle);
         let prev = worldToCell(player.pos.x, player.pos.z);
@@ -1364,7 +1840,13 @@
         return { dist: maxDist, side: false };
       }
 
+      /*
+       * showOverlay() shows or hides one full-screen overlay, such as the menu,
+       * score screen, level transition, or timeout message. When showing an
+       * overlay, it also exits pointer lock so the mouse can click buttons again.
+       */
       function showOverlay(el, on) {
+        // Overlay visibility is class-based so CSS controls layout and backdrop styling.
         if (on) {
           // Ensure overlays remain interactive on desktop when mouse was previously captured.
           if (document.pointerLockElement) {
@@ -1376,7 +1858,16 @@
         }
       }
 
+      /*
+       * applyUIState() translates the gameState string into visible UI.
+       *
+       * During gameplay, it shows the HUD, compass, mobile controls, and action
+       * buttons. Outside gameplay, it shows the correct overlay and hides
+       * gameplay-only controls. Centralizing this prevents different parts of the
+       * code from disagreeing about what should be visible.
+       */
       function applyUIState() {
+        // Centralized UI switching prevents conflicting overlays from being visible together.
         const playing = gameState === "playing";
         hud.style.display = playing ? "block" : "none";
         northWidget.style.display = playing ? "block" : "none";
@@ -1385,13 +1876,20 @@
 
         showOverlay(startOverlay, gameState === "menu");
         showOverlay(gameOverOverlay, gameState === "gameover");
+        showOverlay(levelPreviewOverlay, gameState === "preview");
         if (!playing) {
           showOverlay(levelTransitionOverlay, false);
           showOverlay(timeoutOverlay, false);
         }
       }
 
+      /*
+       * updateHUD() copies current game values into the on-screen HUD. It also
+       * disables the hint button when hints are gone or the game is not currently
+       * playing, which prevents invalid button presses.
+       */
       function updateHUD() {
+        // HUD values are derived from game state each frame instead of maintained separately.
         levelEl.textContent = String(level);
         timeEl.textContent = String(Math.max(0, Math.ceil(timer)));
         livesEl.textContent = String(lives);
@@ -1401,15 +1899,35 @@
         hintBtn.disabled = hintsLeft <= 0 || gameState !== "playing";
       }
 
+      /*
+       * levelSizeFor() calculates how wide and tall the maze should be for a
+       * given level. The game starts with CFG.START_SIZE and adds
+       * CFG.SIZE_INCREMENT for each new level, so later mazes become harder
+       * because they contain more cells and longer paths.
+       */
       function levelSizeFor(lvl) {
+        // Difficulty scales by enlarging the maze grid.
         return CFG.START_SIZE + (lvl - 1) * CFG.SIZE_INCREMENT;
       }
 
+      /*
+       * hintsForLevel() decides how many hints the player receives on a level.
+       * Bigger mazes can be much harder to solve, so the number grows with the
+       * level instead of staying fixed forever.
+       */
       function hintsForLevel(lvl) {
+        // Later levels receive more hints because the route length grows sharply with maze size.
         return Math.max(0, lvl + 2);
       }
 
+      /*
+       * timerFromOptimalRoute() sets the countdown timer for the current maze.
+       * It finds the shortest route from start to exit, turns that route into a
+       * distance, divides by player speed, and then multiplies by a fairness
+       * factor. This means a maze with a longer correct route gets more time.
+       */
       function timerFromOptimalRoute() {
+        // Timer length comes from the actual generated maze, not just the level number.
         if (!maze || !startCell || !exitCell) return 0;
 
         const path = shortestPath(startCell.x, startCell.y, exitCell.x, exitCell.y);
@@ -1421,7 +1939,14 @@
         return (factor * routeDistance) / speed;
       }
 
+      /*
+       * escapeToMenuAndScores() safely leaves the current run view and shows the
+       * score overlay. It also resolves any waiting transition promises so an
+       * async level-change or timeout sequence cannot stay stuck in the
+       * background after the player escapes to the menu.
+       */
       function escapeToMenuAndScores() {
+        // Escape acts as a safe pause/quit: it exits transitions, pointer lock, and shows scores.
         if (gameState === "boot") return;
 
         // Unblock any pending transition awaiters before resetting state.
@@ -1435,6 +1960,11 @@
           timeoutContinueResolver = null;
           resolve();
         }
+        if (levelStartResolver) {
+          const resolve = levelStartResolver;
+          levelStartResolver = null;
+          resolve();
+        }
 
         isLevelTransition = false;
         isTimeoutTransition = false;
@@ -1445,7 +1975,13 @@
         showOverlay(scoresOverlay, true);
       }
 
+      /*
+       * levelClearBonus() calculates how many points the player earns for one
+       * completed level. It combines a base reward, a level-based reward, a time
+       * bonus, and a life bonus. This rewards both progress and careful play.
+       */
       function levelClearBonus(lvl, timeLeft, livesLeft) {
+        // Score rewards reaching higher levels, finishing quickly, and preserving lives.
         return Math.floor(
           CFG.SCORE_LEVEL_BASE
           + lvl * CFG.SCORE_LEVEL_SCALE
@@ -1454,7 +1990,13 @@
         );
       }
 
+      /*
+       * cumulativeScoreUntilLevel() estimates a starting score for Continue mode.
+       * It adds the base completion value for previous levels, but it does not
+       * include time or life bonuses because those details were not saved.
+       */
       function cumulativeScoreUntilLevel(lvl) {
+        // Continue mode estimates prior score from level completion only, without time or life bonuses.
         let total = 0;
         for (let i = 1; i <= lvl; i++) {
           total += CFG.SCORE_LEVEL_BASE + i * CFG.SCORE_LEVEL_SCALE;
@@ -1462,14 +2004,39 @@
         return Math.floor(total);
       }
 
+      /*
+       * makeCell() creates one maze cell. A new cell begins with all four walls
+       * closed. generateMaze() later removes pairs of walls between neighboring
+       * cells to carve passages.
+       */
       function makeCell() {
+        // A cell starts sealed on all four sides; maze generation carves passages by opening wall pairs.
         return {
           visited: false,
           walls: { n: true, e: true, s: true, w: true },
         };
       }
 
+      /*
+       * generateMaze() creates the maze data for one level.
+       *
+       * The first part of the algorithm is iterative depth-first search. It
+       * starts in the center, picks random unvisited neighbors, removes walls to
+       * move into them, and uses a stack to backtrack when it reaches a dead end.
+       * That produces a "perfect maze": every cell can be reached, and there is
+       * only one simple path between any two cells. After that, the function opens
+       * a small number of extra internal walls. Those extra openings create loops
+       * and side routes, so the player can explore more of the map and make more
+       * interesting wrong turns without making the maze chaotic.
+       */
       function generateMaze(size) {
+        /*
+         * Generate the base maze using iterative depth-first search.
+         *
+         * Starting with a perfect maze guarantees the level is solvable. The
+         * later extra-opening pass adds limited complexity without risking
+         * disconnected areas.
+         */
         const grid = [];
         for (let y = 0; y < size; y++) {
           const row = [];
@@ -1477,6 +2044,7 @@
           grid.push(row);
         }
 
+        // Odd sizes put the start exactly in the center; even sizes would choose one of four middle cells.
         const sx = Math.floor(size / 2);
         const sy = Math.floor(size / 2);
         const stack = [[sx, sy]];
@@ -1527,6 +2095,40 @@
           }
         }
 
+        /*
+         * Add a few extra internal passages.
+         *
+         * The base maze already reaches every cell, but it behaves like a tree:
+         * one correct route connects any two places. Opening a small percentage
+         * of remaining walls creates loops and alternate routes. That gives
+         * players slightly more access to distracting or erroneous parts of the
+         * labyrinth while preserving the overall maze feel.
+         */
+        const extraWalls = [];
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            if (x < size - 1 && grid[y][x].walls.e) extraWalls.push([x, y, "e"]);
+            if (y < size - 1 && grid[y][x].walls.s) extraWalls.push([x, y, "s"]);
+          }
+        }
+
+        const extraOpeningCount = Math.floor(size * size * CFG.MAZE_EXTRA_OPENING_RATE);
+        for (let i = 0; i < extraOpeningCount && extraWalls.length; i++) {
+          const pickIndex = randInt(0, extraWalls.length - 1);
+          const pick = extraWalls.splice(pickIndex, 1)[0];
+          const x = pick[0];
+          const y = pick[1];
+          const dir = pick[2];
+          if (dir === "e") {
+            grid[y][x].walls.e = false;
+            grid[y][x + 1].walls.w = false;
+          } else {
+            grid[y][x].walls.s = false;
+            grid[y + 1][x].walls.n = false;
+          }
+        }
+
+        // Exits are placed on the outer border, excluding corners so the player has room to cross the opening.
         const exits = [];
         for (let x = 1; x < size - 1; x++) {
           exits.push({ x, y: 0, dir: "n" });
@@ -1547,7 +2149,14 @@
         };
       }
 
+      /*
+       * cellToWorld() converts maze grid coordinates into 3D world coordinates.
+       * The maze grid uses x/y cell numbers such as (0, 0), but Three.js uses x/z
+       * positions centered around the origin. This conversion lets the center of
+       * the maze appear near world position (0, 0).
+       */
       function cellToWorld(cx, cy) {
+        // Convert grid coordinates to centered world coordinates used by the camera and meshes.
         const center = (mazeSize - 1) / 2;
         return {
           x: (cx - center) * CFG.CELL_SIZE,
@@ -1555,7 +2164,14 @@
         };
       }
 
+      /*
+       * worldToCell() converts a 3D world position back into maze cell
+       * coordinates. Movement and camera position are smooth world values, but
+       * collision, hints, and exit checks need to know which cell the player is
+       * currently inside.
+       */
       function worldToCell(x, z) {
+        // Round to the nearest cell center and clamp so tiny floating-point drift cannot leave the grid.
         const center = (mazeSize - 1) / 2;
         const cx = Math.round(x / CFG.CELL_SIZE + center);
         const cy = Math.round(z / CFG.CELL_SIZE + center);
@@ -1565,7 +2181,20 @@
         };
       }
 
+      /*
+       * buildWorld() turns maze data into visible scenery.
+       *
+       * In Three.js mode it creates floor tiles, wall meshes, lighting, the sun,
+       * the exit marker, and hidden hint-beam objects. In fallback ray mode it
+       * skips mesh creation because renderRayFrame() draws directly from the maze
+       * data instead. This function is called each time a level is prepared.
+       */
       function buildWorld() {
+        /*
+         * Build the current level's visible world. In Three.js mode this creates
+         * floor and wall meshes; in fallback mode it only prepares dimensions
+         * needed by the ray renderer.
+         */
         if (renderMode !== "three") {
           floorHighlights.length = 0;
           mazeHalfWorld = (mazeSize * CFG.CELL_SIZE) / 2;
@@ -1656,6 +2285,7 @@
         worldRoot.add(floorGroup);
         worldRoot.add(wallsGroup);
 
+        // Shared walls should be drawn once, not once from each neighboring cell.
         const wallPlaced = new Set();
 
         for (let y = 0; y < mazeSize; y++) {
@@ -1734,7 +2364,7 @@
           if (obj.isMesh) floorHighlights.push(obj);
         });
 
-        // Exit marker
+        // Exit marker and hint beam objects are created at zero opacity, then animated when hints are active.
         const eWorld = cellToWorld(exitCell.x, exitCell.y);
         const markerGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.08, 24);
         const marker = new THREE.Mesh(markerGeo, exitMaterial);
@@ -1825,7 +2455,20 @@
         worldRoot.userData.exitBeamLight = beamLight;
       }
 
+      /*
+       * initThree() sets up the main WebGL renderer.
+       *
+       * It creates the renderer, scene, camera, fog, and basic lights. It also
+       * connects pointer-lock mouse looking: when the player clicks the canvas,
+       * the browser can capture mouse movement so moving the mouse turns the
+       * camera like a first-person game.
+       */
       function initThree() {
+        /*
+         * Create the WebGL renderer and camera for the main 3D experience.
+         * Most scene geometry is rebuilt per level in buildWorld(); this setup
+         * runs once because the renderer, camera, and base lights are reusable.
+         */
         renderer = new THREE.WebGLRenderer({
           antialias: quality.antialias,
           alpha: true,
@@ -1839,6 +2482,7 @@
         scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x080d27, quality.fogDensity);
 
+        // Near/far planes are chosen to show large later mazes without wasting depth precision too badly.
         camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 380);
         scene.add(camera);
 
@@ -1875,7 +2519,14 @@
         window.addEventListener("resize", onResize);
       }
 
+      /*
+       * onResize() updates whichever renderer is active after the browser window
+       * changes size. Three.js needs its camera aspect ratio and renderer size
+       * updated. The fallback canvas needs its pixel buffer resized and scaled so
+       * drawings remain sharp on high-DPI screens.
+       */
       function onResize() {
+        // Keep the active renderer matched to the browser viewport and device pixel ratio.
         if (renderMode === "three") {
           if (!renderer || !camera) return;
           camera.aspect = window.innerWidth / window.innerHeight;
@@ -1894,7 +2545,20 @@
         }
       }
 
+      /*
+       * setupInput() connects physical controls to game state.
+       *
+       * Keyboard events update keyState, mouse movement changes yaw/pitch while
+       * pointer lock is active, touch joysticks update moveInput/lookInput, and
+       * buttons trigger hints or menu escapes. The function does not directly
+       * move the player; updatePlayer() reads these input values every frame.
+       */
       function setupInput() {
+        /*
+         * Wire keyboard, mouse, touch joysticks, and UI buttons.
+         * Input handlers record intent; updatePlayer turns that intent into
+         * smoothed movement during the animation loop.
+         */
         window.addEventListener("keydown", (e) => {
           keyState[e.code] = true;
 
@@ -1965,18 +2629,52 @@
             }
           });
         }
+
+        if (levelStartBtn) {
+          levelStartBtn.addEventListener("click", () => {
+            if (levelStartResolver) {
+              const resolve = levelStartResolver;
+              levelStartResolver = null;
+              levelStartBtn.disabled = true;
+              resolve();
+            }
+          });
+        }
       }
 
+      /*
+       * bindJoystick() creates one touch joystick from three DOM elements:
+       * a touch zone, a base circle, and a moving stick circle. It tracks only
+       * one touch identifier at a time so two fingers do not fight for the same
+       * joystick. The callback receives normalized x/y values in the range -1..1.
+       */
       function bindJoystick(zone, base, stick, callback) {
+        /*
+         * Small reusable touch joystick.
+         *
+         * The callback receives normalized values from -1 to 1. The visual
+         * stick is clamped to maxR so dragging farther does not create faster
+         * movement than keyboard input.
+         */
         let activeId = null;
         let cx = 0;
         let cy = 0;
         const maxR = 48;
 
+        /*
+         * pointFromTouch() converts a Touch object into the simple x/y shape used
+         * by the joystick math. Keeping this tiny helper makes it easier to adapt
+         * the joystick later if mouse or pointer events are added.
+         */
         function pointFromTouch(t) {
           return { x: t.clientX, y: t.clientY };
         }
 
+        /*
+         * reset() hides the joystick visuals and sends neutral input to the game.
+         * This is important when a touch ends or is cancelled, otherwise the
+         * player might keep moving after lifting their thumb.
+         */
         function reset() {
           activeId = null;
           base.style.display = "none";
@@ -2021,6 +2719,11 @@
           }
         }, { passive: true });
 
+        /*
+         * endTouch() checks whether the ending touch is the one controlling this
+         * joystick. If it is, the joystick resets; if it is a different finger,
+         * this joystick ignores it.
+         */
         function endTouch(e) {
           if (activeId === null) return;
           for (let i = 0; i < e.changedTouches.length; i++) {
@@ -2035,23 +2738,46 @@
         zone.addEventListener("touchcancel", endTouch, { passive: true });
       }
 
+      /*
+       * startRun() begins a new scoring run. It chooses the starting level,
+       * clears the score, prepares the first maze, and shows the level preview.
+       * The timer and movement begin later, after the player presses Start.
+       */
       function startRun(startLevel) {
-        gameState = "playing";
+        // Begin a fresh score run from the requested level.
         level = Math.max(1, startLevel || 1);
         score = 0;
         prepareLevel(level, true);
-        applyUIState();
+        void showLevelPreview();
       }
 
+      /*
+       * continueRun() starts from the highest level saved in progressData and
+       * shows that level's preview before play begins. Because the game does not
+       * store exact past time/life bonuses, it rebuilds the score using
+       * cumulativeScoreUntilLevel() as a fair simple estimate.
+       */
       function continueRun() {
-        gameState = "playing";
+        // Continue starts at the highest unlocked level and estimates score from previous clears.
         level = Math.max(1, progressData.highestLevel || 1);
         score = cumulativeScoreUntilLevel(level - 1);
         prepareLevel(level, true);
-        applyUIState();
+        void showLevelPreview();
       }
 
+      /*
+       * prepareLevel() resets everything that belongs to the current level.
+       *
+       * It chooses maze size, hint count, lives, timer, start/exit cells, player
+       * position, camera direction, and velocity. It then calls buildWorld() so
+       * the renderer matches the newly generated maze.
+       */
       function prepareLevel(lvl, freshLives) {
+        /*
+         * Reset all level-specific state and place the player in a new maze.
+         * This function is used both for a brand-new level and for continuing a
+         * run, so freshLives controls whether lives reset.
+         */
         mazeSize = levelSizeFor(lvl);
         hintsLeft = hintsForLevel(lvl);
         lives = freshLives ? CFG.START_LIVES : lives;
@@ -2072,6 +2798,7 @@
         player.pos.x = startPos.x;
         player.pos.z = startPos.z;
 
+        // Face the exit's general direction at spawn so the first view is useful rather than random.
         const exPos = cellToWorld(exitCell.x, exitCell.y);
         player.yaw = Math.atan2(exPos.x - startPos.x, exPos.z - startPos.z);
         player.pitch = 0;
@@ -2085,23 +2812,48 @@
         updateProgressIfNeeded();
       }
 
+      /*
+       * updateProgressIfNeeded() saves the highest level reached. It runs when a
+       * level is prepared, so progress is kept even if the player closes the page
+       * before eventually losing the run.
+       */
       function updateProgressIfNeeded() {
+        // Unlocking happens as soon as the player reaches a level, not only after game over.
         if (level > progressData.highestLevel) {
           progressData.highestLevel = level;
           saveProgress(progressData.highestLevel);
         }
       }
 
+      /*
+       * hasWall() answers one simple question: "Does this cell have a wall in
+       * this direction?" Out-of-bounds cells count as walls to keep movement,
+       * raycasting, and pathfinding from walking outside the maze.
+       */
       function hasWall(cx, cy, dir) {
+        // Treat out-of-bounds as solid wall so callers do not need separate edge checks.
         if (cy < 0 || cy >= mazeSize || cx < 0 || cx >= mazeSize) return true;
         return maze[cy][cx].walls[dir];
       }
 
+      /*
+       * withinBoundsCell() checks whether grid coordinates point to a real cell.
+       * This is mainly used by pathfinding, where possible moves are tested
+       * before being added to the search queue.
+       */
       function withinBoundsCell(cx, cy) {
+        // True only for valid grid positions.
         return cx >= 0 && cx < mazeSize && cy >= 0 && cy < mazeSize;
       }
 
+      /*
+       * canCrossFromCell() checks whether the player, a ray, or the pathfinder
+       * may move from one cell into a neighboring cell. It only allows one-cell
+       * north/east/south/west moves, and it requires the wall in that direction
+       * to be open.
+       */
       function canCrossFromCell(cx, cy, nx, ny) {
+        // Movement may cross only one neighboring cell at a time and only through an open wall.
         const dx = nx - cx;
         const dy = ny - cy;
         if (dx === 1 && dy === 0) return !hasWall(cx, cy, "e");
@@ -2111,7 +2863,18 @@
         return false;
       }
 
+      /*
+       * applyWallCollisionBuffer() keeps the player from standing too close to
+       * solid walls. Think of the camera as having a small invisible body around
+       * it. The collision buffer is that body radius, so the view does not clip
+       * through walls.
+       */
       function applyWallCollisionBuffer() {
+        /*
+         * Clamp the player inside the current cell when a wall is present.
+         * The buffer approximates the player's body radius, preventing the
+         * camera from clipping directly through wall meshes.
+         */
         const c = worldToCell(player.pos.x, player.pos.z);
         const walls = maze[c.y][c.x].walls;
         const center = cellToWorld(c.x, c.y);
@@ -2133,7 +2896,20 @@
         player.pos.z = clamp(player.pos.z, -worldEdge, worldEdge);
       }
 
+      /*
+       * tryMoveAxis() attempts to move the player for one frame.
+       *
+       * It handles X movement and Z movement separately so diagonal movement can
+       * slide along walls. For each axis, it checks whether the new position stays
+       * in the same cell or crosses through an open wall into a neighbor. After
+       * movement, it applies the wall buffer, updates the player's cell, and
+       * checks whether the exit has been crossed.
+       */
       function tryMoveAxis(dx, dz) {
+        /*
+         * Move X and Z separately. Axis-separated movement lets the player slide
+         * along walls instead of getting fully stopped by a diagonal collision.
+         */
         const oldX = player.pos.x;
         const oldZ = player.pos.z;
 
@@ -2174,7 +2950,19 @@
         checkExitCross();
       }
 
+      /*
+       * checkExitCross() decides whether the level is actually complete.
+       *
+       * The player must be in the exit cell and move through the open outer edge.
+       * This makes the finish feel like escaping the maze boundary, not just
+       * stepping onto a special square.
+       */
       function checkExitCross() {
+        /*
+         * Reaching the exit cell is not enough: the player must cross through
+         * the open outer edge. This prevents instant completion when the player
+         * merely steps onto the final tile.
+         */
         if (isLevelTransition) return;
         if (player.cellX !== exitCell.x || player.cellY !== exitCell.y) return;
 
@@ -2195,7 +2983,13 @@
         }
       }
 
+      /*
+       * onLevelComplete() handles a successful escape. It prevents duplicate
+       * triggers, adds the level bonus to the score, shows transition messages,
+       * waits for the player to continue, then prepares the next level.
+       */
       function onLevelComplete() {
+        // Score the completed level, show a two-step transition, then build the next maze.
         if (isLevelTransition || gameState !== "playing") return;
         isLevelTransition = true;
 
@@ -2227,6 +3021,7 @@
           if (gameState === "playing") {
             level = nextLevel;
             prepareLevel(level, true);
+            void showLevelPreview();
           }
 
           showOverlay(levelTransitionOverlay, false);
@@ -2234,7 +3029,13 @@
         })();
       }
 
+      /*
+       * onLifeLost() subtracts one life after a timeout. If no lives remain it
+       * sends the game to onGameOver(). Otherwise it restarts the player at the
+       * center of the same maze with the level timer and hints reset.
+       */
       function onLifeLost() {
+        // Losing a life keeps the same maze so the player can learn from the previous attempt.
         lives -= 1;
         if (lives <= 0) {
           onGameOver();
@@ -2264,7 +3065,13 @@
         updateHUD();
       }
 
+      /*
+       * onTimerExpired() shows the timeout overlay before applying life loss.
+       * The pause gives the player a clear explanation of what happened instead
+       * of instantly teleporting or ending the game.
+       */
       function onTimerExpired() {
+        // Timeout is separated from life loss so the player can read the message before being reset.
         if (isTimeoutTransition || isLevelTransition || gameState !== "playing") return;
         isTimeoutTransition = true;
 
@@ -2283,7 +3090,12 @@
         })();
       }
 
+      /*
+       * onGameOver() switches to the game-over screen, summarizes the run, checks
+       * whether the score belongs on the leaderboard, and renders the score table.
+       */
       function onGameOver() {
+        // Finalize the run and reveal name entry only when the score can appear on the top-10 board.
         gameState = "gameover";
         applyUIState();
 
@@ -2304,7 +3116,20 @@
         renderScoresInto("scoreTable");
       }
 
+      /*
+       * shortestPath() finds the quickest route from one maze cell to another.
+       *
+       * It uses breadth-first search, often called BFS. BFS explores all cells
+       * one step away, then two steps away, then three, and so on. Because every
+       * maze move has the same cost, the first time BFS reaches the exit it has
+       * found the shortest path. The prev map remembers where each cell came
+       * from so the function can rebuild the route at the end.
+       */
       function shortestPath(fromX, fromY, toX, toY) {
+        /*
+         * Breadth-first search finds the shortest number of cell steps to the
+         * exit. It is ideal here because every maze move has the same cost.
+         */
         const q = [[fromX, fromY]];
         const prev = new Map();
         const seen = new Set([keyForCell(fromX, fromY)]);
@@ -2349,7 +3174,15 @@
         return path;
       }
 
+      /*
+       * activateHint() spends one hint and calculates the route to the exit from
+       * the player's current cell. The full route is saved for the minimap, but
+       * only the first few cells are highlighted in the 3D world. This teaches
+       * the next direction while still leaving the player to solve most of the
+       * maze.
+       */
       function activateHint() {
+        // Spend one hint, compute the shortest path, and reveal only an initial segment in the world.
         if (hintsLeft <= 0) return;
         hintsLeft -= 1;
 
@@ -2364,7 +3197,19 @@
         updateHUD();
       }
 
+      /*
+       * updateHintVisuals() animates all hint-related visuals each frame.
+       *
+       * In Three.js mode it pulses the exit marker, rotates the ring, brightens
+       * the beam, fades the minimap, and temporarily recolors floor tiles along
+       * the hint segment. When the hint is no longer active, it restores each
+       * floor tile's original color so the maze returns to normal.
+       */
       function updateHintVisuals(now) {
+        /*
+         * Animate hint feedback without changing maze data. When the hint fades,
+         * all floor materials are restored from their saved base colors.
+         */
         const marker = worldRoot && worldRoot.userData.exitMarker;
         const ring = worldRoot && worldRoot.userData.exitRing;
         const beamCore = worldRoot && worldRoot.userData.exitBeamCore;
@@ -2437,33 +3282,41 @@
         }
       }
 
-      function drawMinimap() {
-        const w = minimapWrap.clientWidth;
-        const h = minimapWrap.clientHeight;
-        if (w < 5 || h < 5) return;
+      /*
+       * drawMazeMap() draws the maze onto whichever canvas is passed in.
+       *
+       * The regular hint minimap and the before-level preview both need the same
+       * basic picture: walls, exit, player/start position, and sometimes the hint
+       * path. Sharing this function prevents the two maps from drifting apart in
+       * style or behavior.
+       */
+      function drawMazeMap(canvas, ctx, width, height, options) {
+        if (!canvas || !ctx || width < 5 || height < 5) return;
 
-        if (minimapCanvas.width !== Math.floor(w * devicePixelRatio) || minimapCanvas.height !== Math.floor(h * devicePixelRatio)) {
-          minimapCanvas.width = Math.floor(w * devicePixelRatio);
-          minimapCanvas.height = Math.floor(h * devicePixelRatio);
-          minimapCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+        const dpr = window.devicePixelRatio || 1;
+        const targetW = Math.floor(width * dpr);
+        const targetH = Math.floor(height * dpr);
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          canvas.width = targetW;
+          canvas.height = targetH;
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
 
-        minimapCtx.clearRect(0, 0, w, h);
-
-        minimapCtx.fillStyle = "rgba(8, 13, 34, 0.86)";
-        minimapCtx.fillRect(0, 0, w, h);
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "rgba(8, 13, 34, 0.9)";
+        ctx.fillRect(0, 0, width, height);
 
         if (!maze) return;
 
-        const pad = 12;
-        const cell = Math.min((w - pad * 2) / mazeSize, (h - pad * 2) / mazeSize);
-        const ox = (w - cell * mazeSize) * 0.5;
-        const oy = (h - cell * mazeSize) * 0.5;
+        const pad = options && options.pad ? options.pad : 12;
+        const cell = Math.min((width - pad * 2) / mazeSize, (height - pad * 2) / mazeSize);
+        const ox = (width - cell * mazeSize) * 0.5;
+        const oy = (height - cell * mazeSize) * 0.5;
 
-        minimapCtx.strokeStyle = "rgba(193, 221, 255, 0.75)";
-        minimapCtx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(193, 221, 255, 0.75)";
+        ctx.lineWidth = 1;
 
-        minimapCtx.beginPath();
+        ctx.beginPath();
         for (let y = 0; y < mazeSize; y++) {
           for (let x = 0; x < mazeSize; x++) {
             const c = maze[y][x];
@@ -2471,66 +3324,146 @@
             const y0 = oy + y * cell;
             const x1 = x0 + cell;
             const y1 = y0 + cell;
-            if (c.walls.n) { minimapCtx.moveTo(x0, y0); minimapCtx.lineTo(x1, y0); }
-            if (c.walls.w) { minimapCtx.moveTo(x0, y0); minimapCtx.lineTo(x0, y1); }
-            if (x === mazeSize - 1 && c.walls.e) { minimapCtx.moveTo(x1, y0); minimapCtx.lineTo(x1, y1); }
-            if (y === mazeSize - 1 && c.walls.s) { minimapCtx.moveTo(x0, y1); minimapCtx.lineTo(x1, y1); }
+            if (c.walls.n) { ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); }
+            if (c.walls.w) { ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); }
+            if (x === mazeSize - 1 && c.walls.e) { ctx.moveTo(x1, y0); ctx.lineTo(x1, y1); }
+            if (y === mazeSize - 1 && c.walls.s) { ctx.moveTo(x0, y1); ctx.lineTo(x1, y1); }
           }
         }
-        minimapCtx.stroke();
+        ctx.stroke();
 
-        if (fullHintPath && fullHintPath.length) {
-          minimapCtx.strokeStyle = "rgba(255, 231, 112, 0.9)";
-          minimapCtx.lineWidth = Math.max(1.2, cell * 0.15);
-          minimapCtx.beginPath();
-          for (let i = 0; i < fullHintPath.length; i++) {
-            const p = fullHintPath[i];
+        const path = options && options.path ? options.path : null;
+        if (path && path.length) {
+          ctx.strokeStyle = "rgba(255, 231, 112, 0.9)";
+          ctx.lineWidth = Math.max(1.2, cell * 0.15);
+          ctx.beginPath();
+          for (let i = 0; i < path.length; i++) {
+            const p = path[i];
             const px = ox + (p[0] + 0.5) * cell;
             const py = oy + (p[1] + 0.5) * cell;
-            if (i === 0) minimapCtx.moveTo(px, py);
-            else minimapCtx.lineTo(px, py);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
           }
-          minimapCtx.stroke();
+          ctx.stroke();
         }
 
-        // Exit marker
-        const ex = ox + (exitCell.x + 0.5) * cell;
-        const ey = oy + (exitCell.y + 0.5) * cell;
-        minimapCtx.fillStyle = "rgba(158, 125, 255, 0.95)";
-        minimapCtx.beginPath();
-        minimapCtx.arc(ex, ey, Math.max(2.2, cell * 0.18), 0, Math.PI * 2);
-        minimapCtx.fill();
+        if (startCell) {
+          const sx = ox + (startCell.x + 0.5) * cell;
+          const sy = oy + (startCell.y + 0.5) * cell;
+          ctx.fillStyle = "rgba(118, 255, 174, 0.9)";
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(2.1, cell * 0.16), 0, Math.PI * 2);
+          ctx.fill();
+        }
 
-        // Player marker + direction arrow
-        const pcell = worldToCell(player.pos.x, player.pos.z);
-        const px = ox + (pcell.x + 0.5) * cell;
-        const py = oy + (pcell.y + 0.5) * cell;
+        if (exitCell) {
+          const ex = ox + (exitCell.x + 0.5) * cell;
+          const ey = oy + (exitCell.y + 0.5) * cell;
+          ctx.fillStyle = "rgba(158, 125, 255, 0.95)";
+          ctx.beginPath();
+          ctx.arc(ex, ey, Math.max(2.2, cell * 0.18), 0, Math.PI * 2);
+          ctx.fill();
+        }
 
-        minimapCtx.fillStyle = "rgba(50, 208, 255, 1)";
-        minimapCtx.beginPath();
-        minimapCtx.arc(px, py, Math.max(2.4, cell * 0.2), 0, Math.PI * 2);
-        minimapCtx.fill();
+        if (options && options.showPlayer) {
+          const pcell = worldToCell(player.pos.x, player.pos.z);
+          const px = ox + (pcell.x + 0.5) * cell;
+          const py = oy + (pcell.y + 0.5) * cell;
 
-        const dirLen = Math.max(7, cell * 0.55);
-        // Canvas minimap uses screen-space Y down; negate world-forward projection to match camera facing.
-        const dx = -Math.sin(player.yaw) * dirLen;
-        const dy = -Math.cos(player.yaw) * dirLen;
-        minimapCtx.strokeStyle = "rgba(255, 231, 112, 1)";
-        minimapCtx.lineWidth = Math.max(1.2, cell * 0.14);
-        minimapCtx.beginPath();
-        minimapCtx.moveTo(px, py);
-        minimapCtx.lineTo(px + dx, py + dy);
-        minimapCtx.stroke();
+          ctx.fillStyle = "rgba(50, 208, 255, 1)";
+          ctx.beginPath();
+          ctx.arc(px, py, Math.max(2.4, cell * 0.2), 0, Math.PI * 2);
+          ctx.fill();
+
+          const dirLen = Math.max(7, cell * 0.55);
+          const dx = -Math.sin(player.yaw) * dirLen;
+          const dy = -Math.cos(player.yaw) * dirLen;
+          ctx.strokeStyle = "rgba(255, 231, 112, 1)";
+          ctx.lineWidth = Math.max(1.2, cell * 0.14);
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.lineTo(px + dx, py + dy);
+          ctx.stroke();
+        }
       }
 
+      /*
+       * showLevelPreview() displays the full map for the prepared level and waits
+       * for the player to press Start. It is used before level 1 and before every
+       * later level, so the player always gets a planning moment before the timer
+       * begins.
+       */
+      async function showLevelPreview() {
+        gameState = "preview";
+        levelPreviewTitle.textContent = "Level " + level;
+        levelPreviewText.textContent = "Study the labyrinth. Timer starts when you press Start.";
+        levelStartBtn.disabled = false;
+        applyUIState();
+
+        const frame = levelPreviewMap.parentElement;
+        drawMazeMap(levelPreviewMap, levelPreviewCtx, frame.clientWidth, frame.clientHeight, {
+          pad: 14,
+          showPlayer: true,
+        });
+
+        await waitForLevelStart();
+        if (gameState !== "preview") return;
+        showOverlay(levelPreviewOverlay, false);
+        gameState = "playing";
+        applyUIState();
+      }
+
+      /*
+       * drawMinimap() draws the temporary overhead map shown during a hint.
+       *
+       * It sizes the canvas for the current screen, draws every maze wall, draws
+       * the full hint path, marks the exit, and marks the player's current cell
+       * plus facing direction. It redraws only at CFG.MINIMAP_FPS because the map
+       * is useful information, but it does not need to update as often as the 3D
+       * view.
+       */
+      function drawMinimap() {
+        /*
+         * Draw a compact top-down view while a hint is active. The minimap uses
+         * canvas rather than DOM elements because the maze can contain many wall
+         * segments, and canvas redraws are cheaper for this kind of picture.
+         */
+        const w = minimapWrap.clientWidth;
+        const h = minimapWrap.clientHeight;
+        drawMazeMap(minimapCanvas, minimapCtx, w, h, {
+          pad: 12,
+          path: fullHintPath,
+          showPlayer: true,
+        });
+      }
+
+      /*
+       * updateNorthPointer() rotates the compass widget so it remains useful as
+       * the player turns. The rotation is the negative of player yaw because the
+       * compass card turns opposite the camera to keep world north readable.
+       */
       function updateNorthPointer() {
+        // Rotate the compass opposite the camera yaw so the N label points toward world north.
         if (!northCard) return;
         const rot = -player.yaw;
         northCard.style.transform = "translate(-50%, -50%) rotate(" + rot.toFixed(4) + "rad)";
       }
 
+      /*
+       * updatePlayer() is the main movement function.
+       *
+       * It combines keyboard input and touch joystick input, normalizes diagonal
+       * movement, smooths look and movement values, turns player yaw/pitch into
+       * forward/right direction vectors, computes velocity, moves with collision,
+       * and finally places the camera at the player's current position.
+       */
       function updatePlayer(dt) {
-        // Keyboard movement
+        /*
+         * Convert keyboard and joystick input into movement for this frame.
+         * dt is the elapsed time in seconds, so motion stays consistent across
+         * fast and slow displays.
+         */
+        // Keyboard movement.
         let kbX = 0;
         let kbY = 0;
         if (keyState.KeyA || keyState.ArrowLeft) kbX -= 1;
@@ -2541,6 +3474,7 @@
         let ix = moveInput.x + kbX;
         let iy = -moveInput.y + kbY;
 
+        // Normalize diagonal input so moving forward+right is not faster than moving forward.
         const mag = Math.hypot(ix, iy);
         if (mag > 1) {
           ix /= mag;
@@ -2564,6 +3498,7 @@
         const targetVX = (forwardX * iy + rightX * ix) * CFG.MOVE_SPEED;
         const targetVZ = (forwardZ * iy + rightZ * ix) * CFG.MOVE_SPEED;
         const accel = (Math.abs(ix) + Math.abs(iy) > 0.001) ? CFG.MOVE_ACCEL : CFG.MOVE_DECEL;
+        // Exponential smoothing makes acceleration frame-rate independent.
         const moveLerp = 1 - Math.exp(-accel * dt);
 
         moveVel.x = lerp(moveVel.x, targetVX, moveLerp);
@@ -2582,10 +3517,27 @@
         }
       }
 
+      /*
+       * tick() is the main animation loop and the heartbeat of the game.
+       *
+       * It runs once for each browser animation frame. While playing, it reduces
+       * the timer, updates the player, checks timeout and transition states,
+       * updates the compass, hints, toast, minimap, HUD, and adaptive graphics
+       * quality. Then it renders using either Three.js or the fallback ray
+       * renderer, and asks the browser to call tick() again.
+       */
       function tick() {
+        /*
+         * Main animation loop.
+         *
+         * Every frame: measure time, update gameplay, draw the active renderer,
+         * and request the next frame. Browser requestAnimationFrame pauses or
+         * slows in background tabs, which is friendlier to battery life.
+         */
         if (renderMode === "three" && (!renderer || !scene || !camera)) return;
         if (renderMode === "ray" && !rayCtx) return;
 
+        // Cap dt so a long pause does not cause one huge physics/timer jump.
         const dt = Math.min(0.05, clock.getDelta());
         const now = performance.now();
 
@@ -2612,6 +3564,7 @@
           }
           updateHUD();
 
+          // Dynamically lower or raise render resolution to keep gameplay smooth.
           fpsSample.accum += dt;
           fpsSample.frames += 1;
           if (fpsSample.accum >= CFG.FPS_SAMPLE_SECONDS && renderMode === "three") {
@@ -2638,7 +3591,13 @@
         requestAnimationFrame(tick);
       }
 
+      /*
+       * openMenu() changes the game into menu mode. It updates overlay visibility
+       * and enables the Continue button only when saved progress says the player
+       * has reached a level beyond level 1.
+       */
       function openMenu() {
+        // Show the start menu and enable Continue only after level progress has been saved.
         gameState = "menu";
         applyUIState();
 
@@ -2648,7 +3607,13 @@
           : "Continue L" + progressData.highestLevel;
       }
 
+      /*
+       * setupUIEvents() connects menu and score-screen buttons to game actions.
+       * It starts new runs, continues saved progress, opens/closes scores, returns
+       * to the menu, plays again after game over, and saves leaderboard names.
+       */
       function setupUIEvents() {
+        // Button handlers connect menu and score overlays to the game-state functions above.
         newRunBtn.addEventListener("click", () => {
           startRun(1);
         });
@@ -2690,7 +3655,21 @@
         });
       }
 
+      /*
+       * boot() starts the whole application.
+       *
+       * It chooses a quality profile, loads or falls back from Three.js, prepares
+       * inputs and buttons, opens the menu, hides the loading screen, and starts
+       * tick(). If something unexpected fails, it leaves a helpful error message
+       * in the loader instead of showing a blank page.
+       */
       async function boot() {
+        /*
+         * Application entry point.
+         *
+         * Boot chooses the best available renderer, wires input and UI events,
+         * opens the menu, hides the loader, and starts the animation loop.
+         */
         try {
           detectQualityProfile();
           try {
