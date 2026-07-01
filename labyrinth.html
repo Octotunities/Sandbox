@@ -35,7 +35,9 @@
       height: 100%;
       margin: 0;
       overflow: hidden;
-      background: radial-gradient(circle at 20% 15%, #1a2869 0%, #0b1032 40%, #050714 100%);
+      background:
+        radial-gradient(circle at 50% 18%, rgba(255, 225, 126, 0.22) 0%, rgba(255, 182, 82, 0.12) 18%, rgba(255, 182, 82, 0) 42%),
+        radial-gradient(circle at 20% 15%, #233382 0%, #0b1032 40%, #050714 100%);
       color: var(--ink);
       font-family: "Trebuchet MS", "Segoe UI", sans-serif;
     }
@@ -1724,8 +1726,9 @@
 
         // Sky
         const sky = rayCtx.createLinearGradient(0, 0, 0, h * 0.55);
-        sky.addColorStop(0, hslCss(hue + 0.02, 0.62, 0.37));
-        sky.addColorStop(1, hslCss(hue + 0.02, 0.58, 0.13));
+        sky.addColorStop(0, hslCss(hue + 0.02, 0.66, 0.43));
+        sky.addColorStop(0.42, hslCss(hue + 0.04, 0.64, 0.28));
+        sky.addColorStop(1, hslCss(hue + 0.08, 0.62, 0.16));
         rayCtx.fillStyle = sky;
         rayCtx.fillRect(0, 0, w, h * 0.55);
 
@@ -1742,14 +1745,22 @@
           const sy = h * 0.28;
           const sr = Math.max(24, Math.min(w, h) * 0.05);
 
-          const glow = rayCtx.createRadialGradient(sx, sy, sr * 0.12, sx, sy, sr * 3.8);
+          const sunWash = rayCtx.createRadialGradient(sx, sy, 0, sx, sy, sr * 8.2);
+          sunWash.addColorStop(0, "rgba(255, 238, 168, 0.34)");
+          sunWash.addColorStop(0.28, "rgba(255, 205, 108, 0.18)");
+          sunWash.addColorStop(0.72, "rgba(255, 180, 70, 0.06)");
+          sunWash.addColorStop(1, "rgba(255, 180, 70, 0)");
+          rayCtx.fillStyle = sunWash;
+          rayCtx.fillRect(0, 0, w, h * 0.55);
+
+          const glow = rayCtx.createRadialGradient(sx, sy, sr * 0.12, sx, sy, sr * 5.2);
           glow.addColorStop(0, "rgba(255, 251, 206, 0.96)");
-          glow.addColorStop(0.18, "rgba(255, 238, 158, 0.78)");
-          glow.addColorStop(0.52, "rgba(255, 200, 98, 0.30)");
+          glow.addColorStop(0.18, "rgba(255, 238, 158, 0.86)");
+          glow.addColorStop(0.52, "rgba(255, 200, 98, 0.42)");
           glow.addColorStop(1, "rgba(255, 180, 70, 0)");
           rayCtx.fillStyle = glow;
           rayCtx.beginPath();
-          rayCtx.arc(sx, sy, sr * 3.9, 0, Math.PI * 2);
+          rayCtx.arc(sx, sy, sr * 5.3, 0, Math.PI * 2);
           rayCtx.fill();
 
           rayCtx.fillStyle = "rgba(255, 248, 188, 0.95)";
@@ -2242,7 +2253,7 @@
         sunHalo.scale.set(haloSize, haloSize, 1);
         worldRoot.add(sunHalo);
 
-        const sunLight = new THREE.DirectionalLight(0xffe8a8, quality.lowEnd ? 0.22 : 0.3);
+        const sunLight = new THREE.DirectionalLight(0xffe8a8, quality.lowEnd ? 0.34 : 0.46);
         sunLight.position.copy(sunPos);
         sunLight.target.position.set(0, 0, 0);
         worldRoot.add(sunLight);
