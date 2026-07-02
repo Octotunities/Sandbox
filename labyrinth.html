@@ -659,7 +659,7 @@
       <div class="card">
         <h1 class="title">Life Runner</h1>
         <p class="subtitle">
-          Escape layered labyrinths from the center before time runs out. Two hints per level reveal a short route segment and a tactical map flash.
+          Escape layered labyrinths from your marked start point before time runs out. Hints reveal a short route segment and a tactical map flash.
         </p>
         <ul class="list">
           <li>First-person view only.</li>
@@ -732,7 +732,7 @@
     <div id="timeoutOverlay" class="overlay">
       <div class="card">
         <h2 id="timeoutTitle">Time Expired</h2>
-        <p id="timeoutText">You lost one life. Re-centering you for another escape attempt.</p>
+        <p id="timeoutText">You lost one life. Returning you to the start for another escape attempt.</p>
         <div class="overlay-actions"><button id="timeoutContinueBtn">Continue</button></div>
       </div>
     </div>
@@ -829,8 +829,8 @@
        * 4. startRun(), continueRun(), prepareLevel(), generateMaze(),
        *    showLevelPreview()
        *    These functions begin gameplay. A level is prepared by calculating
-       *    maze size, generating a maze, choosing an exit, placing the player in
-       *    the center, setting the timer, and building the visible world. The
+       *    maze size, generating a maze, choosing an exit, placing the player on
+       *    the opposite side, setting the timer, and building the visible world. The
        *    preview map is then shown, and active play begins only after Start.
        *
        * 5. buildWorld(), cellToWorld(), worldToCell()
@@ -884,6 +884,7 @@
        * detectQualityProfile(): chooses graphics settings based on device clues.
        * randInt(min, max): chooses a random whole number in a range.
        * keyForCell(x, y): creates a Map/Set key for one maze cell.
+       * yawToward(from, to): calculates the camera yaw needed to face a target.
        * loadProgress(): reads the highest unlocked level from localStorage.
        * saveProgress(highest): saves the highest unlocked level.
        * loadScores(): reads, cleans, sorts, and trims the high-score list.
@@ -911,7 +912,7 @@
        * generateMaze(size): builds a random, solvable maze with a few optional loops.
        * cellToWorld(cx, cy): converts grid cells to 3D positions.
        * worldToCell(x, z): converts 3D positions back to grid cells.
-       * buildWorld(): creates the visible maze, exit marker, lights, and effects.
+       * buildWorld(): creates the visible maze, start/exit markers, lights, and effects.
        * initThree(): creates the Three.js renderer, scene, camera, and mouse look.
        * onResize(): resizes the active renderer when the browser size changes.
        * setupInput(): connects keyboard, mouse, touch, hint, and escape controls.
@@ -964,7 +965,7 @@
         // UI safe-area offsets keep the HUD and touch controls away from phone notches and browser chrome.
         SAFE_TOP: 56,
         SAFE_BOTTOM: 84,
-        // Maze sizes stay odd so the start cell can sit exactly in the center.
+        // Maze sizes stay odd so the carving seed and opposite-side start calculations stay balanced.
         START_SIZE: 9,
         // Each level grows by four cells per side; this makes difficulty rise quickly without exploding the object count too soon.
         SIZE_INCREMENT: 4,
@@ -1382,6 +1383,16 @@
       }
 
       /*
+       * yawToward() returns the camera yaw needed to look from one world position
+       * toward another. Three.js cameras look down their local negative Z axis,
+       * so this uses the negative target vector. Without that sign flip, the
+       * player visually faces exactly away from the intended target.
+       */
+      function yawToward(from, to) {
+        return Math.atan2(from.x - to.x, from.z - to.z);
+      }
+
+      /*
        * loadProgress() reads the highest unlocked level from localStorage.
        * Because localStorage can be missing, blocked, or edited by the user, the
        * function is defensive: it catches errors and falls back to level 1.
@@ -1735,8 +1746,8 @@
         // Field of view is wide enough for navigation but narrow enough to reduce fisheye distortion.
         const fov = Math.PI * 0.62;
 
-        // Always-visible orientation cue: sun fixed to the south.
-        const sunSouthAngle = 0;
+        // Always-visible orientation cue: sun fixed to the south (+Z).
+        const sunSouthAngle = Math.PI;
         let rel = sunSouthAngle - player.yaw;
         while (rel > Math.PI) rel -= Math.PI * 2;
         while (rel < -Math.PI) rel += Math.PI * 2;
@@ -1828,8 +1839,8 @@
         let prevZ = player.pos.z;
 
         for (let d = stepDist; d <= maxDist; d += stepDist) {
-          const wx = player.pos.x + sin * d;
-          const wz = player.pos.z + cos * d;
+          const wx = player.pos.x - sin * d;
+          const wz = player.pos.z - cos * d;
           const cell = worldToCell(wx, wz);
 
           if (cell.x !== prev.x || cell.y !== prev.y) {
@@ -2038,7 +2049,10 @@
        * only one simple path between any two cells. After that, the function opens
        * a small number of extra internal walls. Those extra openings create loops
        * and side routes, so the player can explore more of the map and make more
-       * interesting wrong turns without making the maze chaotic.
+       * interesting wrong turns without making the maze chaotic. Finally, the
+       * player start is placed about two-thirds of the way from the maze center
+       * toward the wall opposite the exit, creating a clearer start-to-exit
+       * journey across the labyrinth.
        */
       function generateMaze(size) {
         /*
@@ -2055,11 +2069,11 @@
           grid.push(row);
         }
 
-        // Odd sizes put the start exactly in the center; even sizes would choose one of four middle cells.
-        const sx = Math.floor(size / 2);
-        const sy = Math.floor(size / 2);
-        const stack = [[sx, sy]];
-        grid[sy][sx].visited = true;
+        // The carving seed stays in the center so the maze grows outward in a balanced way.
+        const carveStartX = Math.floor(size / 2);
+        const carveStartY = Math.floor(size / 2);
+        const stack = [[carveStartX, carveStartY]];
+        grid[carveStartY][carveStartX].visited = true;
 
         while (stack.length) {
           const top = stack[stack.length - 1];
@@ -2153,9 +2167,15 @@
         const chosenExit = exits[randInt(0, exits.length - 1)];
         grid[chosenExit.y][chosenExit.x].walls[chosenExit.dir] = false;
 
+        const center = (size - 1) * 0.5;
+        const oppositeX = (size - 1) - chosenExit.x;
+        const oppositeY = (size - 1) - chosenExit.y;
+        const startX = clamp(Math.round(center + (oppositeX - center) * 0.67), 1, size - 2);
+        const startY = clamp(Math.round(center + (oppositeY - center) * 0.67), 1, size - 2);
+
         return {
           grid,
-          start: { x: sx, y: sy },
+          start: { x: startX, y: startY },
           exit: chosenExit,
         };
       }
@@ -2286,6 +2306,14 @@
           opacity: 0.9,
         });
 
+        const startMaterial = new THREE.MeshStandardMaterial({
+          color: new THREE.Color().setHSL(levelHue01() + 0.42, 0.94, 0.58),
+          emissive: new THREE.Color().setHSL(levelHue01() + 0.42, 0.98, 0.34),
+          emissiveIntensity: 1.05,
+          metalness: 0.18,
+          roughness: 0.32,
+        });
+
         const floorInnerColor = new THREE.Color().setHSL(levelHue01() + 0.02, 0.60, 0.30);
         const floorOuterColor = new THREE.Color().setHSL(levelHue01() + 0.02, 0.82, 0.62);
         const floorInnerEm = new THREE.Color().setHSL(levelHue01() + 0.03, 0.74, 0.11);
@@ -2375,6 +2403,50 @@
           if (obj.isMesh) floorHighlights.push(obj);
         });
 
+        const glowMap = getHintGlowTexture();
+
+        // Start marker: a bright square on the floor plus a floating ring/glow so the spawn point is memorable.
+        const sWorld = cellToWorld(startCell.x, startCell.y);
+        const startSquare = new THREE.Mesh(
+          new THREE.BoxGeometry(CFG.CELL_SIZE * 0.5, 0.09, CFG.CELL_SIZE * 0.5),
+          startMaterial
+        );
+        startSquare.position.set(sWorld.x, 0.055, sWorld.z);
+        worldRoot.add(startSquare);
+
+        const startRingColor = new THREE.Color().setHSL(levelHue01() + 0.42, 0.95, 0.66);
+        const startRing = new THREE.Mesh(
+          new THREE.TorusGeometry(0.86, 0.07, 12, 28),
+          new THREE.MeshStandardMaterial({
+            color: startRingColor,
+            emissive: startRingColor,
+            emissiveIntensity: 0.8,
+            metalness: 0.28,
+            roughness: 0.34,
+          })
+        );
+        startRing.position.set(sWorld.x, 2.25, sWorld.z);
+        startRing.rotation.x = Math.PI * 0.5;
+        worldRoot.add(startRing);
+
+        const startAura = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: glowMap,
+            color: startRingColor,
+            transparent: true,
+            opacity: 0.62,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          })
+        );
+        startAura.position.set(sWorld.x, 2.25, sWorld.z);
+        startAura.scale.set(3.2, 3.2, 1);
+        worldRoot.add(startAura);
+
+        const startLight = new THREE.PointLight(startRingColor, quality.lowEnd ? 0.85 : 1.25, 9, 1.8);
+        startLight.position.set(sWorld.x, 1.9, sWorld.z);
+        worldRoot.add(startLight);
+
         // Exit marker and hint beam objects are created at zero opacity, then animated when hints are active.
         const eWorld = cellToWorld(exitCell.x, exitCell.y);
         const markerGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.08, 24);
@@ -2421,7 +2493,6 @@
         );
         beamHalo.position.set(eWorld.x, 6.8, eWorld.z);
 
-        const glowMap = getHintGlowTexture();
         const beamAura = new THREE.Sprite(
           new THREE.SpriteMaterial({
             map: glowMap,
@@ -2464,6 +2535,10 @@
         worldRoot.userData.exitBeamAura = beamAura;
         worldRoot.userData.exitBeamTopAura = beamTopAura;
         worldRoot.userData.exitBeamLight = beamLight;
+        worldRoot.userData.startSquare = startSquare;
+        worldRoot.userData.startRing = startRing;
+        worldRoot.userData.startAura = startAura;
+        worldRoot.userData.startLight = startLight;
       }
 
       /*
@@ -2780,8 +2855,9 @@
        * prepareLevel() resets everything that belongs to the current level.
        *
        * It chooses maze size, hint count, lives, timer, start/exit cells, player
-       * position, camera direction, and velocity. It then calls buildWorld() so
-       * the renderer matches the newly generated maze.
+       * position, camera direction, and velocity. The start cell is already chosen
+       * by generateMaze() to sit on the opposite side from the exit. It then calls
+       * buildWorld() so the renderer matches the newly generated maze.
        */
       function prepareLevel(lvl, freshLives) {
         /*
@@ -2811,7 +2887,7 @@
 
         // Face the exit's general direction at spawn so the first view is useful rather than random.
         const exPos = cellToWorld(exitCell.x, exitCell.y);
-        player.yaw = Math.atan2(exPos.x - startPos.x, exPos.z - startPos.z);
+        player.yaw = yawToward(startPos, exPos);
         player.pitch = 0;
         moveVel.x = 0;
         moveVel.z = 0;
@@ -3042,8 +3118,8 @@
 
       /*
        * onLifeLost() subtracts one life after a timeout. If no lives remain it
-       * sends the game to onGameOver(). Otherwise it restarts the player at the
-       * center of the same maze with the level timer and hints reset.
+       * sends the game to onGameOver(). Otherwise it returns the player to the
+       * marked start of the same maze with the level timer and hints reset.
        */
       function onLifeLost() {
         // Losing a life keeps the same maze so the player can learn from the previous attempt.
@@ -3053,7 +3129,7 @@
           return;
         }
 
-        // Restart same level and same maze, with full level timer and reset center position.
+        // Restart same level and same maze, with full level timer and reset start position.
         timer = timerFromOptimalRoute();
         hintsLeft = hintsForLevel(level);
         hintPathSegment = [];
@@ -3067,7 +3143,8 @@
         player.cellX = startCell.x;
         player.cellY = startCell.y;
         player.pitch = 0;
-        player.yaw = 0;
+        const exPos = cellToWorld(exitCell.x, exitCell.y);
+        player.yaw = yawToward(startPos, exPos);
         moveVel.x = 0;
         moveVel.z = 0;
         lookVel.x = 0;
@@ -3089,7 +3166,7 @@
         (async () => {
           timeoutTitle.textContent = "Time Expired";
           timeoutText.textContent = lives > 1
-            ? "You lost one life. Re-centering you for another escape attempt."
+            ? "You lost one life. Returning you to the start for another escape attempt."
             : "Final life depleted. Press continue to view run summary.";
           showOverlay(timeoutOverlay, true);
 
@@ -3228,6 +3305,10 @@
         const beamAura = worldRoot && worldRoot.userData.exitBeamAura;
         const beamTopAura = worldRoot && worldRoot.userData.exitBeamTopAura;
         const beamLight = worldRoot && worldRoot.userData.exitBeamLight;
+        const startSquare = worldRoot && worldRoot.userData.startSquare;
+        const startRing = worldRoot && worldRoot.userData.startRing;
+        const startAura = worldRoot && worldRoot.userData.startAura;
+        const startLight = worldRoot && worldRoot.userData.startLight;
         if (marker) {
           const pulse = 0.5 + Math.sin(now * 0.004) * 0.25;
           marker.material.emissiveIntensity = pulse + 0.2;
@@ -3235,6 +3316,16 @@
         if (ring) {
           ring.rotation.z += 0.01;
           ring.material.emissiveIntensity = 0.7 + Math.sin(now * 0.005) * 0.2;
+        }
+        if (startSquare && startRing && startAura && startLight) {
+          const startPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+          startSquare.material.emissiveIntensity = 0.8 + startPulse * 0.55;
+          startRing.rotation.z -= 0.012;
+          startRing.material.emissiveIntensity = 0.75 + startPulse * 0.35;
+          startAura.material.opacity = 0.46 + startPulse * 0.24;
+          const startAuraScale = 3.1 + startPulse * 0.9;
+          startAura.scale.set(startAuraScale, startAuraScale, 1);
+          startLight.intensity = (quality.lowEnd ? 0.75 : 1.05) + startPulse * 0.35;
         }
 
         const active = now < hintActiveUntil;
