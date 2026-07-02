@@ -2885,9 +2885,8 @@
         player.pos.x = startPos.x;
         player.pos.z = startPos.z;
 
-        // Face the exit's general direction at spawn so the first view is useful rather than random.
-        const exPos = cellToWorld(exitCell.x, exitCell.y);
-        player.yaw = yawToward(startPos, exPos);
+        // Randomise the spawn orientation so the player cannot infer the exit direction from the starting view.
+        player.yaw = Math.random() * Math.PI * 2;
         player.pitch = 0;
         moveVel.x = 0;
         moveVel.z = 0;
@@ -3143,8 +3142,7 @@
         player.cellX = startCell.x;
         player.cellY = startCell.y;
         player.pitch = 0;
-        const exPos = cellToWorld(exitCell.x, exitCell.y);
-        player.yaw = yawToward(startPos, exPos);
+        player.yaw = Math.random() * Math.PI * 2;
         moveVel.x = 0;
         moveVel.z = 0;
         lookVel.x = 0;
@@ -3477,15 +3475,17 @@
           ctx.arc(px, py, Math.max(2.4, cell * 0.2), 0, Math.PI * 2);
           ctx.fill();
 
-          const dirLen = Math.max(7, cell * 0.55);
-          const dx = -Math.sin(player.yaw) * dirLen;
-          const dy = -Math.cos(player.yaw) * dirLen;
-          ctx.strokeStyle = "rgba(255, 231, 112, 1)";
-          ctx.lineWidth = Math.max(1.2, cell * 0.14);
-          ctx.beginPath();
-          ctx.moveTo(px, py);
-          ctx.lineTo(px + dx, py + dy);
-          ctx.stroke();
+          if (!options.hidePlayerDir) {
+            const dirLen = Math.max(7, cell * 0.55);
+            const dx = -Math.sin(player.yaw) * dirLen;
+            const dy = -Math.cos(player.yaw) * dirLen;
+            ctx.strokeStyle = "rgba(255, 231, 112, 1)";
+            ctx.lineWidth = Math.max(1.2, cell * 0.14);
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(px + dx, py + dy);
+            ctx.stroke();
+          }
         }
       }
 
@@ -3506,6 +3506,7 @@
         drawMazeMap(levelPreviewMap, levelPreviewCtx, frame.clientWidth, frame.clientHeight, {
           pad: 14,
           showPlayer: true,
+          hidePlayerDir: true,
         });
 
         await waitForLevelStart();
