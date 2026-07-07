@@ -37,7 +37,14 @@
       overflow: hidden;
       background:
         radial-gradient(circle at 50% 18%, rgba(255, 225, 126, 0.22) 0%, rgba(255, 182, 82, 0.12) 18%, rgba(255, 182, 82, 0) 42%),
-        radial-gradient(circle at 20% 15%, #233382 0%, #0b1032 40%, #050714 100%);
+        radial-gradient(circle at 20% 15%, #233382 0%, #0b1032 40%,Level 1
+        Time 11
+        Lives 2
+        Hints 3
+        Score 0
+        Hint (3)
+        Quit
+         #050714 100%);
       color: var(--ink);
       font-family: "Trebuchet MS", "Segoe UI", sans-serif;
     }
@@ -1873,6 +1880,7 @@
           // Ensure overlays remain interactive on desktop when mouse was previously captured.
           if (document.pointerLockElement) {
             document.exitPointerLock?.();
+            pointerLocked = false; // Explicitly update flag to ensure cursor is visible
           }
           el.classList.add("show");
         } else {
@@ -2585,13 +2593,130 @@
 
         clock = new THREE.Clock();
 
-        renderer.domElement.addEventListener("click", () => {
-          if (gameState !== "playing") return;
+        /*
+         * Improved pointer lock request: Allow click anywhere on the document
+         * during gameplay to initiate pointer lock, making it easier to find
+         * the hitbox. Only request if clicking on the game area itself.
+         */
+        function attemptPointerLock() {
+          if (gameState !== "playing" || pointerLocked) return;
+          // Do not attempt to lock if any overlay is visible
+          if (startOverlay.classList.contains("show") || 
+              gameOverOverlay.classList.contains("show") ||
+              levelTransitionOverlay.classList.contains("show") ||
+              levelPreviewOverlay.classList.contains("show") ||
+              timeoutOverlay.classList.contains("show")) {
+            return;
+          }
           renderer.domElement.requestPointerLock?.();
-        });
+        }
 
+        // Primary: Click on canvas directly
+        renderer.domElement.addEventListener("click", attemptPointerLock);
+
+        // Fallback: Allow re-capture if user clicks anywhere on document during gameplay
+        document.addEventListener("click", (e) => {
+          if (gameState !== "playing" || pointerLocked) return;
+          // Do not attempt if any overlay is visible
+          if (startOverlay.classList.contains("show") || 
+              gameOverOverlay.classList.contains("show") ||
+              levelTransitionOverlay.classList.contains("show") ||
+              levelPreviewOverlay.classList.contains("show") ||
+              timeoutOverlay.classList.contains("show")) {
+            return;
+          }
+          // Only attempt if click is within the canvas bounds
+          const rect = renderer.domElement.getBoundingClientRect();
+          if (e.clientX >= rect.left && e.clientX <= rect.right &&
+              e.clientY >= rect.top && e.clientY <= rect.bottom) {
+            attemptPointerLock();
+          }
+        }, { capture: true });
+
+        /*
+         * Track pointer lock state changes. Update the pointerLocked flag
+         * so mouse movement is only applied when locked.
+         */
         document.addEventListener("pointerlockchange", () => {
           pointerLocked = document.pointerLockElement === renderer.domElement;
+        });
+
+        /*
+         * Error handler: If pointer lock request is denied (e.g., by user),
+         * log it so the issue can be debugged.
+         */
+        document.addEventListener("pointerlockerror", () => {
+          console.warn("[Labyrinth] Pointer lock request was denied or failed.");
+        });
+
+        /*
+         * Window blur handler: When the window loses focus, pointer lock is
+         * automatically released by the browser. Store this state so we can
+         * attempt to recapture on focus return.
+         */
+        window.addEventListener("blur", () => {
+          pointerLocked = false;
+        });
+
+        /*
+         * Window focus handler: When the window regains focus during gameplay,
+         * attempt to recapture pointer lock so the player can resume mouse look
+         * without clicking. Do not recapture if an overlay is visible.
+         */
+        window.addEventListener("focus", () => {
+          if (gameState === "playing" && !pointerLocked && document.pointerLockElement === null) {
+            // Check if any overlay is visible
+            const overlayVisible = startOverlay.classList.contains("show") || 
+              gameOverOverlay.classList.contains("show") ||
+              levelTransitionOverlay.classList.contains("show") ||
+              levelPreviewOverlay.classList.contains("show") ||
+              timeoutOverlay.classList.contains("show");
+            if (overlayVisible) return;
+            
+            // Small delay to ensure focus is fully restored
+            setTimeout(() => {
+              if (gameState === "playing" && !pointerLocked && document.pointerLockElement === null) {
+                const overlayStillVisible = startOverlay.classList.contains("show") || 
+                  gameOverOverlay.classList.contains("show") ||
+                  levelTransitionOverlay.classList.contains("show") ||
+                  levelPreviewOverlay.classList.contains("show") ||
+                  timeoutOverlay.classList.contains("show");
+                if (!overlayStillVisible) {
+                  renderer.domElement.requestPointerLock?.();
+                }
+              }
+            }, 50);
+          }
+        });
+
+        /*
+         * Visibility change handler: If the tab is hidden and then shown,
+         * re-request pointer lock during gameplay. Do not recapture if an
+         * overlay is visible.
+         */
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden && gameState === "playing" && !pointerLocked && document.pointerLockElement === null) {
+            // Check if any overlay is visible
+            const overlayVisible = startOverlay.classList.contains("show") || 
+              gameOverOverlay.classList.contains("show") ||
+              levelTransitionOverlay.classList.contains("show") ||
+              levelPreviewOverlay.classList.contains("show") ||
+              timeoutOverlay.classList.contains("show");
+            if (overlayVisible) return;
+            
+            setTimeout(() => {
+              if (!document.hidden && gameState === "playing" && !pointerLocked && document.pointerLockElement === null) {
+                const overlayStillVisible = startOverlay.classList.contains("show") || 
+                  gameOverOverlay.classList.contains("show") ||
+                  levelTransitionOverlay.classList.contains("show") ||
+                  levelPreviewOverlay.classList.contains("show") ||
+                  timeoutOverlay.classList.contains("show");
+                if (!overlayStillVisible) {
+                  renderer.domElement.requestPointerLock?.();
+                }
+              }
+            }, 50);
+          }
         });
 
         document.addEventListener("mousemove", (e) => {
