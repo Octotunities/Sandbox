@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Binary Maze Runner</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+            color: #58a6ff;
+        }
+
+        p {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #8b949e;
+        }
+
+        canvas {
+            background-color: #0a0a0f;
+            border: 3px solid #30363d;
+            border-radius: 6px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>2D Maze Runner</h1>
+        <p>Use <strong>WASD</strong> or <strong>Arrow Keys</strong> to move through the paths.</p>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // Configuration
+        const TILE_SIZE = 40;
+        const MAZE_ROWS = 30;
+        const MAZE_COLS = 20;
+
+        // Binary Direction Masks (NESW)
+        const N = 8, E = 4, S = 2, W = 1;
+        const DX = { [N]: 0, [E]: 1, [S]: 0, [W]: -1 };
+        const DY = { [N]: -1, [E]: 0, [S]: 1, [W]: 0 };
+        const OPPOSITE = { [N]: S, [E]: W, [S]: N, [W]: E };
+
+        // Game State
+        let grid = Array(MAZE_ROWS).fill().map(() => Array(MAZE_COLS).fill(0));
+        let player = { x: 0, y: 0 };
+        let camera = { x: 0, y: 0 };
+
+        // Iterative Depth-First Search Maze Generator
+        function generateMaze() {
+            let stack = [{ x: 0, y: 0 }];
+            let visited = Array(MAZE_ROWS).fill().map(() => Array(MAZE_COLS).fill(false));
+            visited[0][0] = true;
+
+            while (stack.length > 0) {
+                let current = stack[stack.length - 1];
+                let dirs = [N, E, S, W];
+                
+                // Shuffle directions for randomness
+                dirs.sort(() => Math.random() - 0.5);
+
+                let carved = false;
+                for (let d of dirs) {
+                    let nx = current.x + DX[d];
+                    let ny = current.y + DY[d];
+
+                    if (nx >= 0 && nx < MAZE_COLS && ny >= 0 && ny < MAZE_ROWS && !visited[ny][nx]) {
+                        // Apply bitmask logic using bitwise OR (|)
+                        grid[current.y][current.x] |= d;
+                        grid[ny][nx] |= OPPOSITE[d];
+                        visited[ny][nx] = true;
+                        stack.push({ x: nx, y: ny });
+                        carved = true;
+                        break;
+                    }
+                }
+                if (!carved) {
+                    stack.pop();
+                }
+            }
+        }
+
+        // Input Handling
+        window.addEventListener("keydown", (e) => {
+            let currentWalls = grid[player.y][player.x];
+            
+            // Prevent browser from scrolling up/down/left/right with arrow keys
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+                e.preventDefault();
+            }
+
+            // Move only if the respective bit direction mask is set to 1
+            if ((e.key === "ArrowUp" || e.key.toLowerCase() === "w") && (currentWalls & N)) {
+                player.y--;
+            } else if ((e.key === "ArrowDown" || e.key.toLowerCase() === "s") && (currentWalls & S)) {
+                player.y++;
+            } else if ((e.key === "ArrowLeft" || e.key.toLowerCase() === "a") && (currentWalls & W)) {
+                player.x--;
+            } else if ((e.key === "ArrowRight" || e.key.toLowerCase() === "d") && (currentWalls & E)) {
+                player.x++;
+            }
+        });
+
+        // Main Rendering Loop
+        function draw() {
+            // Clear canvas background
+            ctx.fillStyle = "#0a0a0f";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Camera target (Centered on the player's exact position)
+            let targetCamX = player.x * TILE_SIZE + TILE_SIZE / 2;
+            let targetCamY = player.y * TILE_SIZE + TILE_SIZE / 2;
+
+            // Smooth linear interpolation (lerp) for the camera tracking
+            camera.x += (targetCamX - camera.x) * 0.2;
+            camera.y += (targetCamY - camera.y) * 0.2;
+
+            // Render Maze
+            for (let y = 0; y < MAZE_ROWS; y++) {
+                for (let x = 0; x < MAZE_COLS; x++) {
+                    let cell = grid[y][x];
+
+                    // Map grid tiles to camera space coordinate systems
+                    let screenX = x * TILE_SIZE - camera.x + canvas.width / 2;
+                    let screenY = y * TILE_SIZE - camera.y + canvas.height / 2;
+
+                    // Frustum Culling (Performance optimization: don't render tiles outside screen view)
+                    if (screenX + TILE_SIZE < 0 || screenX > canvas.width || screenY + TILE_SIZE < 0 || screenY > canvas.height) {
+                        continue;
+                    }
+
+                    ctx.strokeStyle = "#ffffff";
+                    ctx.lineWidth = 3;
+
+                    // Draw walls using bitwise AND (&) checks
+                    if (!(cell & N)) {
+                        ctx.beginPath(); ctx.moveTo(screenX, screenY); ctx.lineTo(screenX + TILE_SIZE, screenY); ctx.stroke();
+                    }
+                    if (!(cell & E)) {
+                        ctx.beginPath(); ctx.moveTo(screenX + TILE_SIZE, screenY); ctx.lineTo(screenX + TILE_SIZE, screenY + TILE_SIZE); ctx.stroke();
+                    }
+                    if (!(cell & S)) {
+                        ctx.beginPath(); ctx.moveTo(screenX, screenY + TILE_SIZE); ctx.lineTo(screenX + TILE_SIZE, screenY + TILE_SIZE); ctx.stroke();
+                    }
+                    if (!(cell & W)) {
+                        ctx.beginPath(); ctx.moveTo(screenX, screenY); ctx.lineTo(screenX, screenY + TILE_SIZE); ctx.stroke();
+                    }
+                }
+            }
+
+            // Calculate and draw player in world space relative to camera tracking offsets
+            let playerScreenX = player.x * TILE_SIZE - camera.x + canvas.width / 2 + TILE_SIZE / 2;
+            let playerScreenY = player.y * TILE_SIZE - camera.y + canvas.height / 2 + TILE_SIZE / 2;
+
+            ctx.fillStyle = "#00ff96";
+            ctx.beginPath();
+            ctx.arc(playerScreenX, playerScreenY, TILE_SIZE / 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            requestAnimationFrame(draw);
+        }
+
+        // Initialize and Start Game
+        generateMaze();
+        requestAnimationFrame(draw);
+    </script>
+</body>
+</html>
